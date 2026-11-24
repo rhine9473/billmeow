@@ -1,0 +1,3 @@
+- [x] 主题模式 @chairowell
+- [ ] 主题色 @chairowell
+- [ ] PWA @chairowell

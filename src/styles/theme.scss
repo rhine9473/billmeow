@@ -1,0 +1,108 @@
+/* 主题变量：本文件只定义颜色 token，不写组件样式，颜色与布局彻底解耦。
+   四种模式对应关系：
+     - auto  ：不写 data-theme，由 prefers-color-scheme 决定；系统深色 → 暗色（非纯黑）
+     - light ：data-theme="light"，即下方 :root 默认值
+     - dark  ：data-theme="dark" → dark-tokens（深灰底）
+     - black ：data-theme="black" → 纯黑 + 高对比前景
+
+   主题切换过渡：
+     - --theme-transition-ms 默认 260ms，由 JS 写入（用户可调/可关闭，设为 0 即关闭）
+     - 过渡只在切换瞬间挂到 <html> 上（.theme-transition），切换完成后移除，
+       避免平时一直保留全局过渡导致其他动画/滚动卡顿 */
+
+/* 白色（亮色）主题：用户手动选择「白色」时启用，也是系统浅色 / 未设置主题时的默认值 */
+:root {
+  color-scheme: light;
+  accent-color: var(--color-accent);
+  --color-bg: #f4f4f6;
+  --color-surface: #ffffff;
+  --color-border: #e3e3e8;
+  --color-text: #1c1c21;
+  --color-text-muted: #85858d;
+  --color-accent: #4f46e5;
+  --color-success: #189a58;
+  --color-danger: #d64545;
+}
+
+/* 暗色 token：供「跟随系统（系统深色）」和「暗色」两种场景复用，避免重复定义 */
+@mixin dark-tokens {
+  color-scheme: dark;
+  --color-bg: #1a1a1e;
+  --color-surface: #232327;
+  --color-border: #333339;
+  --color-text: #ededf1;
+  --color-text-muted: #9c9ca6;
+  --color-accent: #a5b4fc;
+  --color-success: #6fd99b;
+  --color-danger: #f28b82;
+}
+
+/* auto：跟随系统。
+   @media (prefers-color-scheme: dark) 会读取操作系统 / 浏览器当前的外观偏好，
+   只在系统处于深色时生效。*/
+@media (prefers-color-scheme: dark) {
+  /* 仅在 <html> 没有 data-theme 时匹配，即用户选择的是「跟随系统」。
+     一旦用户手动选了白色 / 暗色 / 纯黑，applyTheme 会写入 data-theme 属性，
+     此处的系统深色样式就不再覆盖用户的选择。 */
+  :root:not([data-theme]) {
+    @include dark-tokens;
+  }
+}
+
+/* 暗色主题：用户手动选择「暗色」时启用。
+   复用暗色 token（深灰底，非纯黑），适合常规夜间使用，比纯黑更柔和。 */
+:root[data-theme='dark'] {
+  @include dark-tokens;
+}
+
+/* 纯黑主题：用户手动选择「纯黑」时启用。
+   纯黑底（#000000）适合 OLED 屏幕省电；因底色极深，前景色提亮以保证对比度。 */
+:root[data-theme='black'] {
+  color-scheme: dark;
+  --color-bg: #000000;
+  --color-surface: #0a0a0c;
+  --color-border: #2a2a30;
+  --color-text: #f5f5f7;
+  --color-text-muted: #a3a3ad;
+  --color-accent: #a5b4fc;
+  --color-success: #6fd99b;
+  --color-danger: #ff8a80;
+}
+
+/* 全局兜底：页面背景与文字色跟随当前主题 token */
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* 页面根节点默认无过渡；只在切换主题的瞬间由 JS 挂上 .theme-transition */
+html {
+  --theme-transition-ms: 260ms;
+}
+
+/* 切换瞬间的全局颜色过渡：只过渡颜色相关的属性，不动布局 */
+html.theme-transition,
+html.theme-transition body,
+html.theme-transition body *,
+html.theme-transition body *::before,
+html.theme-transition body *::after {
+  transition:
+    background-color var(--theme-transition-ms) ease,
+    border-color var(--theme-transition-ms) ease,
+    color var(--theme-transition-ms) ease,
+    fill var(--theme-transition-ms) ease,
+    stroke var(--theme-transition-ms) ease !important;
+  transition-delay: 0s !important;
+}
+
+/* 尊重系统「减少动态效果」偏好：无论设置如何都不播放过渡 */
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transition,
+  html.theme-transition body,
+  html.theme-transition body *,
+  html.theme-transition body *::before,
+  html.theme-transition body *::after {
+    transition: none !important;
+  }
+}

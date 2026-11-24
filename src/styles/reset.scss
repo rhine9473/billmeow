@@ -1,0 +1,96 @@
+/* 全局样式重置（reset）*/
+
+/* 1. 盒模型：让 width / height 包含内边距和边框 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* 2. 清零浏览器默认的外边距和内边距 */
+* {
+  margin: 0;
+  padding: 0;
+}
+
+/* 3. 文档层：修正移动端的文字缩放等跨浏览器差异 */
+html {
+  /* 阻止 iOS 横屏时自动放大文字（不禁用的话字号会突然「变胖」） */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* 统一制表符宽度，避免代码块排版错乱 */
+  tab-size: 4;
+}
+
+/* 4. 媒体元素：默认是行内元素，底部会残留基线缝隙，统一改为块级 */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* 5. 表单控件：浏览器默认让 input / button 用自己的字体，
+      这里统一改为继承父级字体，保证视觉一致 */
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* 按钮去掉默认的背景和边框，只保留「可点击」的语义 */
+button {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* 6. 列表：去掉默认圆点 / 数字和缩进，需要时由业务样式自行加回 */
+ul,
+ol {
+  list-style: none;
+}
+
+/* 7. 链接：去掉下划线和默认蓝色，颜色跟随父级 */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 8. 标题：去掉默认的字号和加粗，
+      避免业务样式被「天生的大字号」干扰 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* 9. 长单词默认会把容器撑宽，这里允许在必要时断行 */
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  overflow-wrap: break-word;
+}
+
+/* 10. 表格：合并相邻边框，去掉单元格之间的间隙 */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+/* 11. 让 hidden 属性稳稳生效，不被业务里更高优先级的 display 覆盖 */
+[hidden] {
+  display: none !important;
+}
