@@ -23,6 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Vitepress
+# VitePress
 */.vitepress/cache
 */.vitepress/dist
+
+# 个人本地文件：文件名以 `-MYSELF` 结尾（扩展名之前），例如 `notes-MYSELF.md`
+*-MYSELF.*
