@@ -47,6 +47,31 @@ button {
   background: none;
   border: none;
   cursor: pointer;
+  /* 移动端点击时浏览器会叠加一块灰色高亮方块，这里关掉统一交给业务样式 */
+  -webkit-tap-highlight-color: transparent;
+  /* 阻止 iOS Safari 在按下时用 -webkit-appearance 覆盖自定义样式 */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 移动端其他可点击元素同样去掉点击高亮 */
+a,
+[role='button'],
+[role='radio'],
+[role='tab'],
+label,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 触屏设备上按下的瞬时反馈：用轻微的透明度代替浏览器默认方块 */
+@media (hover: none) {
+  button:active,
+  [role='button']:active,
+  [role='radio']:active,
+  [role='tab']:active {
+    opacity: 0.75;
+  }
 }
 
 /* 6. 列表：去掉默认圆点 / 数字和缩进，需要时由业务样式自行加回 */
