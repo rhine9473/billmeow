@@ -11,9 +11,41 @@ export interface ThemeTransition {
   duration: number
 }
 
+/** 预设主题色（强调色）色板 */
+export interface AccentPreset {
+  /** 唯一标识，同时作为持久化值 */
+  value: string
+  /** 展示名称 */
+  label: string
+  /** 浅色主题下的色值（较深，保证在浅底上的对比度） */
+  light: string
+  /** 深色主题下的色值（较浅，保证在深底上的对比度） */
+  dark: string
+}
+
+/**
+ * 8 种精选主题色。
+ * 每个颜色准备深浅两套：浅色主题用较深的色，深色/纯黑主题用较亮的色，
+ * 这样无论哪种主题都能保证足够的对比度，不需要运行时计算亮度。
+ */
+export const ACCENT_PRESETS: AccentPreset[] = [
+  { value: 'indigo', label: '靛蓝', light: '#4f46e5', dark: '#a5b4fc' },
+  { value: 'blue', label: '海蓝', light: '#2563eb', dark: '#93c5fd' },
+  { value: 'cyan', label: '青色', light: '#0e7490', dark: '#67e8f9' },
+  { value: 'green', label: '翠绿', light: '#15803d', dark: '#86efac' },
+  { value: 'purple', label: '紫色', light: '#7e22ce', dark: '#d8b4fe' },
+  { value: 'pink', label: '桃粉', light: '#be185d', dark: '#f9a8d4' },
+  { value: 'orange', label: '橙黄', light: '#c2410c', dark: '#fdba74' },
+  { value: 'red', label: '绯红', light: '#b91c1c', dark: '#fca5a5' },
+]
+
+/** 默认强调色（靛蓝），与 theme.scss 中的 :root 保持一致 */
+const DEFAULT_ACCENT = 'indigo'
+
 interface ThemeSettings {
   theme: ThemeMode
   transition: ThemeTransition
+  accent: string
 }
 
 const THEME_KEY = 'billmeow:settings'
@@ -24,6 +56,7 @@ export const TRANSITION_DURATIONS = [120, 200, 260, 400] as const
 const defaultSettings: ThemeSettings = {
   theme: 'auto',
   transition: { enabled: true, duration: 260 },
+  accent: DEFAULT_ACCENT,
 }
 
 /** 过渡结束后移除的类名，与 theme.scss 中保持一致 */
@@ -46,7 +79,32 @@ function loadSettings(): ThemeSettings {
   return {
     theme: stored.theme ?? defaultSettings.theme,
     transition: normalizeTransition(stored.transition),
+    accent: normalizeAccent(stored.accent),
   }
+}
+
+/**
+ * 校验强调色标识，非法值回退默认色。
+ * @param value 待校验的色板标识
+ */
+function normalizeAccent(value: unknown): string {
+  return ACCENT_PRESETS.some((preset) => preset.value === value) ? (value as string) : DEFAULT_ACCENT
+}
+
+/**
+ * 把强调色写入 `<html>` 的 CSS 变量。
+ *
+ * 同时写入深浅两套变量，由 theme.scss 按当前主题选用：
+ * `--color-accent-light` 供浅色主题，`--color-accent-dark` 供深色 / 纯黑。
+ * 这样切换主题时无需 JS 重新计算。
+ *
+ * @param accent 色板标识
+ */
+function applyAccent(accent: string) {
+  const preset = ACCENT_PRESETS.find((item) => item.value === accent) ?? ACCENT_PRESETS[0]
+  const root = document.documentElement
+  root.style.setProperty('--color-accent-light', preset.light)
+  root.style.setProperty('--color-accent-dark', preset.dark)
 }
 
 /**
@@ -105,20 +163,38 @@ function createThemeStore() {
   const state = reactive<ThemeSettings>(loadSettings())
 
   applyTheme(state.theme)
+  applyAccent(state.accent)
 
   watch(
     () => state.theme,
     (mode) => {
       runTransition(state.transition.enabled ? state.transition.duration : 0)
       applyTheme(mode)
-      writeStorage(THEME_KEY, { theme: mode, transition: state.transition })
+      writeStorage(THEME_KEY, {
+        theme: mode,
+        transition: state.transition,
+        accent: state.accent,
+      })
     },
   )
 
   watch(
     () => state.transition,
-    (transition) => writeStorage(THEME_KEY, { theme: state.theme, transition }),
+    (transition) =>
+      writeStorage(THEME_KEY, { theme: state.theme, transition, accent: state.accent }),
     { deep: true },
+  )
+
+  watch(
+    () => state.accent,
+    (accent) => {
+      applyAccent(accent)
+      writeStorage(THEME_KEY, {
+        theme: state.theme,
+        transition: state.transition,
+        accent,
+      })
+    },
   )
 
   const theme = computed({
@@ -135,14 +211,23 @@ function createThemeStore() {
     },
   })
 
+  const accent = computed({
+    get: () => state.accent,
+    set: (value: string) => {
+      state.accent = normalizeAccent(value)
+    },
+  })
+
   function resetTheme() {
     state.theme = defaultSettings.theme
     state.transition = { ...defaultSettings.transition }
+    state.accent = defaultSettings.accent
   }
 
   return {
     theme,
     transition,
+    accent,
     resetTheme,
   }
 }

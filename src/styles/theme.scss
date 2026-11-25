@@ -10,16 +10,19 @@
      - 过渡只在切换瞬间挂到 <html> 上（.theme-transition），切换完成后移除，
        避免平时一直保留全局过渡导致其他动画/滚动卡顿 */
 
-/* 白色（亮色）主题：用户手动选择「白色」时启用，也是系统浅色 / 未设置主题时的默认值 */
+/* 白色（亮色）主题：用户手动选择「白色」时启用，也是系统浅色 / 未设置主题时的默认值。
+   --color-accent 取自定义强调色：浅色底用较深的 --color-accent-light（默认值供 JS 未生效时兜底）。 */
 :root {
   color-scheme: light;
   accent-color: var(--color-accent);
+  --color-accent-light: #4f46e5;
+  --color-accent-dark: #a5b4fc;
   --color-bg: #f4f4f6;
   --color-surface: #ffffff;
   --color-border: #e3e3e8;
   --color-text: #1c1c21;
   --color-text-muted: #85858d;
-  --color-accent: #4f46e5;
+  --color-accent: var(--color-accent-light);
   --color-success: #189a58;
   --color-danger: #d64545;
 }
@@ -32,7 +35,8 @@
   --color-border: #333339;
   --color-text: #ededf1;
   --color-text-muted: #9c9ca6;
-  --color-accent: #a5b4fc;
+  /* 深色底用较亮的强调色 */
+  --color-accent: var(--color-accent-dark);
   --color-success: #6fd99b;
   --color-danger: #f28b82;
 }
@@ -64,7 +68,8 @@
   --color-border: #2a2a30;
   --color-text: #f5f5f7;
   --color-text-muted: #a3a3ad;
-  --color-accent: #a5b4fc;
+  /* 纯黑底同样用较亮的强调色 */
+  --color-accent: var(--color-accent-dark);
   --color-success: #6fd99b;
   --color-danger: #ff8a80;
 }

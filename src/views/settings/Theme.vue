@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import IconCheck from '~icons/material-symbols/check'
 import IconPalette from '~icons/material-symbols/palette'
+import { computed } from 'vue'
 
-import { TRANSITION_DURATIONS, useTheme, type ThemeMode } from '../../stores/theme'
+import {
+  ACCENT_PRESETS,
+  TRANSITION_DURATIONS,
+  useTheme,
+  type ThemeMode,
+} from '../../stores/theme'
 
-const { theme, transition } = useTheme()
+const { theme, transition, accent } = useTheme()
 
 interface HalfColors {
   /** 页面底色 */
@@ -15,8 +21,6 @@ interface HalfColors {
   surface: string
   /** 卡片内条纹色 */
   line: string
-  /** 顶部标签条颜色（该主题的强调色） */
-  accent: string
 }
 
 interface ModeOption {
@@ -26,6 +30,10 @@ interface ModeOption {
   left: HalfColors
   /** 右半区配色；为空表示整张卡片统一使用 left */
   right?: HalfColors
+  /** 左半区底色是否为浅色（决定用深色还是浅色强调色） */
+  leftIsLight: boolean
+  /** 右半区底色是否为浅色；无语义当 right 为空时忽略 */
+  rightIsLight?: boolean
 }
 
 /*
@@ -38,7 +46,6 @@ const LIGHT: HalfColors = {
   border: '#e3e3e8',
   surface: '#ffffff',
   line: '#dcdce2',
-  accent: '#4f46e5',
 }
 
 const DARK: HalfColors = {
@@ -46,7 +53,6 @@ const DARK: HalfColors = {
   border: '#333339',
   surface: '#232327',
   line: '#4a4a52',
-  accent: '#a5b4fc',
 }
 
 const BLACK: HalfColors = {
@@ -54,15 +60,35 @@ const BLACK: HalfColors = {
   border: '#2a2a30',
   surface: '#0a0a0c',
   line: '#2f2f36',
-  accent: '#a5b4fc',
 }
 
 const modes: ModeOption[] = [
-  { value: 'auto', label: '跟随系统', left: LIGHT, right: DARK },
-  { value: 'light', label: '白色', left: LIGHT },
-  { value: 'dark', label: '暗色', left: DARK },
-  { value: 'black', label: '纯黑', left: BLACK },
+  {
+    value: 'auto',
+    label: '跟随系统',
+    left: LIGHT,
+    right: DARK,
+    leftIsLight: true,
+    rightIsLight: false,
+  },
+  { value: 'light', label: '白色', left: LIGHT, leftIsLight: true },
+  { value: 'dark', label: '暗色', left: DARK, leftIsLight: false },
+  { value: 'black', label: '纯黑', left: BLACK, leftIsLight: false },
 ]
+
+/** 当前选中的强调色预设 */
+const currentAccent = computed(
+  () => ACCENT_PRESETS.find((preset) => preset.value === accent.value) ?? ACCENT_PRESETS[0],
+)
+
+/**
+ * 取某个半区应使用的强调色。
+ * 浅色底配深色强调色、深色底配浅色强调色，与 theme.scss 的规则一致。
+ * @param useLight 是否使用浅色主题的强调色
+ */
+function accentFor(useLight: boolean) {
+  return useLight ? currentAccent.value.light : currentAccent.value.dark
+}
 </script>
 
 <template>
@@ -98,7 +124,7 @@ const modes: ModeOption[] = [
               borderRightColor: mode.right ? mode.right.border : undefined,
             }"
           >
-            <span class="preview-tag" :style="{ background: mode.left.accent }" />
+            <span class="preview-tag" :style="{ background: accentFor(mode.leftIsLight) }" />
 
             <span class="preview-block" :style="{ background: mode.left.surface }">
               <span class="preview-line" :style="{ background: mode.left.line }" />
@@ -116,7 +142,7 @@ const modes: ModeOption[] = [
             class="preview-half"
             :style="{ background: mode.right.bg }"
           >
-            <span class="preview-tag" :style="{ background: mode.left.accent }" />
+            <span class="preview-tag" :style="{ background: accentFor(mode.rightIsLight ?? false) }" />
 
             <span class="preview-block" :style="{ background: mode.right.surface }">
               <span class="preview-line" :style="{ background: mode.right.line }" />
@@ -138,6 +164,33 @@ const modes: ModeOption[] = [
 
         <span class="theme-name">{{ mode.label }}</span>
       </button>
+    </div>
+
+    <!-- 主题色：选中后立即应用到全站强调色 -->
+    <div class="accent-row">
+      <h2 class="section-title accent-title">
+        <IconPalette class="title-icon" aria-hidden="true" />
+        主题色
+        <span class="accent-name">{{ currentAccent.label }}</span>
+      </h2>
+
+      <div class="accent-list" role="radiogroup" aria-label="主题色">
+        <button
+          v-for="preset in ACCENT_PRESETS"
+          :key="preset.value"
+          type="button"
+          role="radio"
+          class="accent-dot"
+          :class="{ 'is-active': accent === preset.value }"
+          :style="{ background: preset.light }"
+          :aria-checked="accent === preset.value"
+          :aria-label="preset.label"
+          :title="preset.label"
+          @click="accent = preset.value"
+        >
+          <IconCheck v-if="accent === preset.value" class="accent-check" aria-hidden="true" />
+        </button>
+      </div>
     </div>
 
     <!-- 切换动画设置：可开关、可调时长，方便低性能设备 -->
@@ -167,15 +220,15 @@ const modes: ModeOption[] = [
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 20px;
-  font-size: 22px;
-  font-weight: 700;
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--color-text);
 }
 
 .title-icon {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   color: var(--color-text-muted);
 }
 
@@ -312,6 +365,68 @@ const modes: ModeOption[] = [
 
 .theme-card.is-active .theme-name {
   color: var(--color-accent);
+}
+
+/* 主题色选择行 */
+.accent-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+}
+
+/* 主题色标题：与「主题模式」同级，色名以次要样式跟在右侧 */
+.accent-title {
+  margin-bottom: 12px;
+}
+
+/* 当前色名跟随强调色：--color-accent 会随亮/暗主题自动切换深浅色调 */
+.accent-name {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+/* 色块列表 */
+.accent-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 色块按钮：正圆 + 选中描边 */
+.accent-dot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--color-border);
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+}
+
+.accent-dot:hover {
+  transform: scale(1.12);
+}
+
+.accent-dot.is-active {
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+/* 选中时的白色对勾 */
+.accent-check {
+  width: 14px;
+  height: 14px;
+  color: #fff;
 }
 
 /* 动画设置行 */

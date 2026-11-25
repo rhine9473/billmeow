@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { resetThemeStore, useTheme, type ThemeMode } from './theme'
+import { ACCENT_PRESETS, resetThemeStore, useTheme, type ThemeMode } from './theme'
 
 const THEME_KEY = 'billmeow:settings'
 
@@ -24,6 +24,8 @@ describe('useTheme', () => {
     root.removeAttribute('data-theme')
     root.classList.remove('theme-transition')
     root.style.removeProperty('--theme-transition-ms')
+    root.style.removeProperty('--color-accent-light')
+    root.style.removeProperty('--color-accent-dark')
   })
 
   /* 无论用例是否失败都还原计时器，避免污染后续用例 */
@@ -38,6 +40,11 @@ describe('useTheme', () => {
       const { theme, transition } = useTheme()
       expect(theme.value).toBe('auto')
       expect(transition.value).toEqual({ enabled: true, duration: 260 })
+    })
+
+    it('默认主题色为 indigo', () => {
+      const { accent } = useTheme()
+      expect(accent.value).toBe('indigo')
     })
 
     it('默认 auto 时不写入 data-theme，交给 prefers-color-scheme', () => {
@@ -80,6 +87,57 @@ describe('useTheme', () => {
     })
   })
 
+  describe('主题色', () => {
+    it('初始化时写入深浅两套 CSS 变量', () => {
+      useTheme()
+      const root = document.documentElement
+      const indigo = ACCENT_PRESETS[0]
+      expect(root.style.getPropertyValue('--color-accent-light')).toBe(indigo.light)
+      expect(root.style.getPropertyValue('--color-accent-dark')).toBe(indigo.dark)
+    })
+
+    it('切换主题色后更新 CSS 变量', async () => {
+      const { accent } = useTheme()
+      const green = ACCENT_PRESETS.find((p) => p.value === 'green')!
+
+      accent.value = 'green'
+      await nextTick()
+
+      const root = document.documentElement
+      expect(root.style.getPropertyValue('--color-accent-light')).toBe(green.light)
+      expect(root.style.getPropertyValue('--color-accent-dark')).toBe(green.dark)
+    })
+
+    it('非法色值回退到默认 indigo', async () => {
+      const { accent } = useTheme()
+
+      accent.value = 'not-a-color'
+      await nextTick()
+
+      expect(accent.value).toBe('indigo')
+    })
+
+    it('主题色会持久化', async () => {
+      const { accent } = useTheme()
+
+      accent.value = 'purple'
+      await nextTick()
+
+      expect(storedSettings()).toMatchObject({ accent: 'purple' })
+    })
+
+    it('启动时读取已保存的主题色', () => {
+      localStorage.setItem(
+        THEME_KEY,
+        JSON.stringify({ theme: 'dark', accent: 'orange' }),
+      )
+
+      const { accent } = useTheme()
+
+      expect(accent.value).toBe('orange')
+    })
+  })
+
   describe('applyTheme 行为', () => {
     it.each<[ThemeMode, string | null]>([
       ['auto', null],
@@ -118,6 +176,7 @@ describe('useTheme', () => {
       expect(storedSettings()).toEqual({
         theme: 'black',
         transition: { enabled: true, duration: 260 },
+        accent: 'indigo',
       })
     })
 
@@ -214,6 +273,7 @@ describe('useTheme', () => {
       expect(storedSettings()).toEqual({
         theme: 'auto',
         transition: { enabled: false, duration: 120 },
+        accent: 'indigo',
       })
     })
   })
@@ -235,6 +295,7 @@ describe('useTheme', () => {
       expect(storedSettings()).toEqual({
         theme: 'auto',
         transition: { enabled: true, duration: 260 },
+        accent: 'indigo',
       })
     })
   })
