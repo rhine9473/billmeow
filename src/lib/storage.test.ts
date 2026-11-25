@@ -11,8 +11,14 @@ function mockStorageThrow(method: 'getItem' | 'setItem' | 'removeItem') {
 }
 
 describe('storage', () => {
+  /* 失败路径会调用 console.error 与 alert，这里统一 mock，避免测试噪音与阻塞 */
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  let alertSpy: ReturnType<typeof vi.spyOn>
+
   beforeEach(() => {
     localStorage.clear()
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -47,6 +53,28 @@ describe('storage', () => {
 
       expect(readStorage(KEY, 'fallback')).toBe('fallback')
     })
+
+    it('读取失败时记录错误日志，便于排查', () => {
+      mockStorageThrow('getItem')
+
+      readStorage(KEY, 'fallback')
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[storage] 读取'),
+        expect.any(Error),
+      )
+    })
+
+    it('内容不是合法 JSON 时也记录错误日志', () => {
+      localStorage.setItem(KEY, '{ 坏数据')
+
+      readStorage(KEY, 'fallback')
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[storage] 读取'),
+        expect.any(Error),
+      )
+    })
   })
 
   describe('writeStorage', () => {
@@ -63,10 +91,27 @@ describe('storage', () => {
       expect(readStorage(KEY, '')).toBe('b')
     })
 
-    it('setItem 抛错时静默失败，不向外抛异常', () => {
+    it('setItem 抛错时不向外抛异常，并返回 false', () => {
       mockStorageThrow('setItem')
 
       expect(() => writeStorage(KEY, 'x')).not.toThrow()
+      expect(writeStorage(KEY, 'x')).toBe(false)
+    })
+
+    it('写入成功时返回 true', () => {
+      expect(writeStorage(KEY, 'x')).toBe(true)
+    })
+
+    it('写入失败时记录错误日志并 alert 提示用户', () => {
+      mockStorageThrow('setItem')
+
+      writeStorage(KEY, 'x')
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[storage] 写入'),
+        expect.any(Error),
+      )
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('设置保存失败'))
     })
 
     it('写入失败后读取返回 fallback（可选链风格的降级链路）', () => {
@@ -91,10 +136,22 @@ describe('storage', () => {
       expect(() => removeStorage('not:exists')).not.toThrow()
     })
 
-    it('removeItem 抛错时静默失败', () => {
+    it('removeItem 抛错时不向外抛异常，并记录日志与提示用户', () => {
       mockStorageThrow('removeItem')
 
       expect(() => removeStorage(KEY)).not.toThrow()
+      expect(removeStorage(KEY)).toBe(false)
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[storage] 删除'),
+        expect.any(Error),
+      )
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('数据清除失败'))
+    })
+
+    it('删除成功时返回 true', () => {
+      writeStorage(KEY, 'x')
+
+      expect(removeStorage(KEY)).toBe(true)
     })
   })
 })
