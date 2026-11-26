@@ -11,7 +11,8 @@
 | 状态 | Pinia（按需）/ 组合式函数 |
 | 样式 | SCSS + CSS 变量（主题 token） |
 | 图标 | Iconify（离线 `unplugin-icons` + 在线 `@iconify/vue`） |
-| 测试 | Vitest + jsdom |
+| 测试 | Vitest + jsdom（`@vitest/coverage-v8` 统计覆盖率） |
+| 持续集成 | GitHub Actions（PR 自动 test + build 门禁） |
 | 文档 | VitePress |
 | 包管理 | pnpm |
 
@@ -29,6 +30,7 @@ pnpm dev       # 启动开发服务器（默认 http://localhost:5173）
 | `pnpm build` | 类型检查 + 生产构建 |
 | `pnpm preview` | 预览构建产物 |
 | `pnpm test` | 运行单元测试 |
+| `pnpm test:coverage` | 运行单元测试并生成覆盖率报告 |
 | `pnpm dev:docs` | 本地启动文档站点 |
 | `pnpm build:docs` | 构建文档站点 |
 
@@ -37,7 +39,7 @@ pnpm dev       # 启动开发服务器（默认 http://localhost:5173）
 ```
 billmeow/
 ├── .github/               # GitHub 配置
-│   └── workflows/         # GitHub Actions（含文档自动部署）
+│   └── workflows/         # GitHub Actions（CI 检查 + 文档自动部署）
 ├── .vscode/               # 编辑器配置
 ├── docs/                  # VitePress 文档站点
 │   ├── .vitepress/
@@ -67,6 +69,7 @@ billmeow/
 │           ├── index.vue  # 页面入口
 │           └── Theme.vue  # 页面专用子组件
 ├── dist/                  # 应用构建产物（自动生成）
+├── coverage/              # 测试覆盖率报告（自动生成，已忽略）
 ├── index.html             # 应用 HTML 模板与入口
 ├── package.json           # 依赖与脚本
 ├── pnpm-lock.yaml         # 依赖锁定文件
