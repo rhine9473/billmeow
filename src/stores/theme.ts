@@ -108,6 +108,41 @@ function applyAccent(accent: string) {
 }
 
 /**
+ * 同步浏览器地址栏 / 任务栏的配色（`<meta name="theme-color">`）。
+ *
+ * 取当前主题的**页面背景色**（与 theme.scss 的 `--color-bg` 一致），
+ * 这样地址栏与页面顶部无缝衔接；纯黑主题下即为纯黑。
+ *
+ * @param mode 当前主题模式
+ */
+function applyThemeColor(mode: ThemeMode) {
+  if (typeof document === 'undefined') return
+
+  /* 各主题的页面背景色，与 theme.scss 中的 --color-bg 保持一致 */
+  const BACKGROUNDS: Record<'light' | 'dark' | 'black', string> = {
+    light: '#f4f4f6',
+    dark: '#1a1a1e',
+    black: '#000000',
+  }
+
+  /* auto 模式下需要看系统实际是深色还是浅色 */
+  const prefersDark =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-color-scheme: dark)').matches
+
+  const resolved = mode === 'auto' ? (prefersDark ? 'dark' : 'light') : mode
+  const color = BACKGROUNDS[resolved]
+
+  let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+  if (!meta) {
+    meta = document.createElement('meta')
+    meta.name = 'theme-color'
+    document.head.appendChild(meta)
+  }
+  meta.content = color
+}
+
+/**
  * 把主题应用到 <html>：
  * auto 时移除 data-theme，交给 CSS 的 prefers-color-scheme 决定；
  * 其余模式写入同名属性，由 theme.scss 中对应的选择器接管。
@@ -164,12 +199,21 @@ function createThemeStore() {
 
   applyTheme(state.theme)
   applyAccent(state.accent)
+  applyThemeColor(state.theme)
+
+  /* auto 模式下系统外观变化时，同步更新地址栏配色 */
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    window
+      .matchMedia('(prefers-color-scheme: dark)')
+      .addEventListener('change', () => applyThemeColor(state.theme))
+  }
 
   watch(
     () => state.theme,
     (mode) => {
       runTransition(state.transition.enabled ? state.transition.duration : 0)
       applyTheme(mode)
+      applyThemeColor(mode)
       writeStorage(THEME_KEY, {
         theme: mode,
         transition: state.transition,

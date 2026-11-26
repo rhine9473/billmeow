@@ -15,6 +15,33 @@ function dataTheme() {
   return document.documentElement.getAttribute('data-theme')
 }
 
+/* 读取 <meta name="theme-color"> 的当前值 */
+function themeColor() {
+  return document.querySelector('meta[name="theme-color"]')?.getAttribute('content') ?? null
+}
+
+/*
+ * 模拟系统深浅色偏好。
+ * jsdom 未实现 matchMedia，这里直接注入一个最简替身。
+ */
+function mockPrefersDark(isDark: boolean) {
+  const original = window.matchMedia
+  window.matchMedia = ((query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark') ? isDark : false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+
+  return () => {
+    window.matchMedia = original
+  }
+}
+
 describe('useTheme', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -278,6 +305,74 @@ describe('useTheme', () => {
     })
   })
 
+  describe('theme-color 同步', () => {
+    it('白色主题写入浅色背景', async () => {
+      const { theme } = useTheme()
+
+      theme.value = 'light'
+      await nextTick()
+
+      expect(themeColor()).toBe('#f4f4f6')
+    })
+
+    it('暗色主题写入暗色背景', async () => {
+      const { theme } = useTheme()
+
+      theme.value = 'dark'
+      await nextTick()
+
+      expect(themeColor()).toBe('#1a1a1e')
+    })
+
+    it('纯黑主题写入纯黑背景', async () => {
+      const { theme } = useTheme()
+
+      theme.value = 'black'
+      await nextTick()
+
+      expect(themeColor()).toBe('#000000')
+    })
+
+    it('auto 模式在系统深色时使用暗色背景', () => {
+      mockPrefersDark(true)
+
+      useTheme()
+
+      expect(themeColor()).toBe('#1a1a1e')
+    })
+
+    it('auto 模式在系统浅色时使用浅色背景', () => {
+      mockPrefersDark(false)
+
+      useTheme()
+
+      expect(themeColor()).toBe('#f4f4f6')
+    })
+
+    it('切换主题色不影响 theme-color', async () => {
+      const { theme, accent } = useTheme()
+
+      theme.value = 'dark'
+      await nextTick()
+      expect(themeColor()).toBe('#1a1a1e')
+
+      accent.value = 'green'
+      await nextTick()
+
+      expect(themeColor()).toBe('#1a1a1e')
+    })
+
+    it('缺少 meta 标签时会自动创建', async () => {
+      document.head.querySelector('meta[name="theme-color"]')?.remove()
+
+      const { theme } = useTheme()
+      theme.value = 'black'
+      await nextTick()
+
+      expect(themeColor()).toBe('#000000')
+    })
+  })
+
   describe('resetTheme', () => {
     it('重置为默认主题与默认动画并同步 data-theme 与 localStorage', async () => {
       const { theme, transition, resetTheme } = useTheme()
@@ -297,6 +392,19 @@ describe('useTheme', () => {
         transition: { enabled: true, duration: 260 },
         accent: 'indigo',
       })
+    })
+
+    it('同时重置主题色为默认 indigo', async () => {
+      const { accent, resetTheme } = useTheme()
+
+      accent.value = 'pink'
+      await nextTick()
+      expect(accent.value).toBe('pink')
+
+      resetTheme()
+      await nextTick()
+
+      expect(accent.value).toBe('indigo')
     })
   })
 })

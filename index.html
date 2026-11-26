@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>billmeow</title>
+
+    <!-- iOS 添加到主屏幕：独立窗口显示 + 状态栏样式 + 桌面图标 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="账单喵" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+
+    <!-- 浏览器地址栏 / 任务栏配色，由 JS 按当前主题背景色动态更新 -->
+    <meta name="theme-color" content="#f4f4f6" />
+
+    <title>账单喵</title>
   </head>
   <body>
     <div id="app"></div>
