@@ -2,7 +2,10 @@
  * 账单领域数据模型（数据层）
  *
  * 设计要点：
- * - **金额一律以整数最小单位（number）存储**，避免浮点误差；界面展示时再转成具体的币种。
+ * - **金额一律存整数最小单位**（如 3.14 元存 `314`），类型为 `number`（整数），
+ *   避免浮点累加误差。
+ * - 展示或接收用户输入时，按币种的 `CurrencyMeta.decimals` 换算回实际金额
+ *   （倍数 = `10 ** decimals`），不要硬编码乘 100。
  * - 账户/分类/记录均带 `id`，便于持久化与后续多端同步合并。
  * - 负债账户的余额为负数（消费后更负，还款后向 0 靠近），
  *   净资产 = 所有账户余额之和，与 DESIGN.md 3/4.3 节规则一致。
@@ -12,9 +15,9 @@
  * 展示文案、图标、颜色、排序、分组一律放 `./ui.ts`，依赖方向只能是 `ui.ts → bill.ts`。
  * 需要把两者组合（如账户卡片视图）时，写到 `src/lib/` 的纯函数里。
  *
+ * 金额是单个整数，不是小数，也不是 `{整数部分, 小数部分}`。
+ * 
  * 处理金额前**务必先读同目录的 `README.md`（类型层约定）**。
- * 金额存的是「单个整数最小单位」，不是小数，也不是 `{整数部分, 小数部分}`；
- * 元与分之间的倍数请按 `CurrencyMeta.decimals` 计算，不要硬编码乘 100。
  * @see ./README.md
  */
 
@@ -23,6 +26,33 @@ export type BillDomain = 'expense' | 'income'
 
 /** 账户类型：资产（余额通常为正）或负债（余额为负） */
 export type AccountKind = 'asset' | 'liability'
+
+/**
+ * 消费 / 转账时间的精度。
+ *
+ * - `minute`：真实时刻（用户填写、AI 识别小票、CSV 带时分）。可参与按时间差的去重判断。
+ * - `day`：只知日期，时刻是补齐值（当前约定为当天 `12:00`）。
+ *
+ * @remarks
+ * 用正午补齐而不是零点：正午向前后各留 12 小时余量，时区偏移或夏令时
+ * 不会让它跨到前一天或后一天。
+ *
+ * 补齐值的账单**不能**按时间差判重——同一天多笔同额消费都会被补成 `12:00`，
+ * 因此去重时需退化为「同天 + 同金额 + 同账户」或通过其他条件判断。
+ */
+export type OccurredPrecision = 'minute' | 'day'
+
+/**
+ * 去重匹配的相似程度，供 UI 区分展示，但属于业务逻辑，定义在数据层。
+ *
+ * - `exact`：时间差、金额、账户、分类全部吻合，高度疑似同一笔，依然需要人工确认
+ * - `similar`：仅金额与账户等核心字段吻合，时间只到天，需要人工确认
+ *
+ * @remarks
+ * 本类型只用于界面标记，**不代表系统会自动删除**任何记录，
+ * 是否合并或删除一律由用户决定。
+ */
+export type DuplicateMatchLevel = 'exact' | 'similar'
 
 /**
  * 支持的币种代码（ISO 4217）。
@@ -49,15 +79,14 @@ export type CurrencyCode =
 /**
  * 币种的计算元数据。
  *
- * 只有小数位数：币种代码已经是 {@link CURRENCY_MAP} 的键，不需要在值里重复。
- * 重复会让「键是 CNY、值是 USD」这种错位编译期检不出来。
+ * 只有小数位数 `decimals` 这一项：币种代码本身已是 {@link CURRENCY_MAP} 的键，无需在值里重复。
  *
- * 币种的中文名、符号等展示信息属于 UI 层，见同目录 `ui.ts`，
- * 不要混进这里——数据层只管「怎么算」，不管「怎么显示」。
+ * 币种的中文名、符号等展示信息属于 UI 层，见同目录 `ui.ts`，不要混进这里，
+ * 因为数据层只管「怎么算」，不管「怎么显示」。
  */
 export interface CurrencyMeta {
   /**
-   * 小数位数，用于整数最小单位与元之间的换算（倍数 = `10 ** decimals`）：
+   * 小数位数，整数最小单位与实际金额之间的换算倍数 = `10 ** decimals`：
    * JPY / KRW / VND 无小数（0 位），其余为 2 位。
    */
   decimals: number
@@ -68,6 +97,8 @@ export interface CurrencyMeta {
  *
  * 类型是 `Record<CurrencyCode, CurrencyMeta>`，因此 {@link CurrencyCode}
  * 每新增一个币种，这里漏写会在**编译期**直接报错，不会拖到运行时才发现。
+ *
+ * 查表与校验函数在 `src/lib/currency.ts`（本文件只放声明，不放可执行逻辑）。
  *
  * @example
  * CURRENCY_MAP.CNY.decimals  // 2
@@ -91,55 +122,25 @@ export const CURRENCY_MAP: Readonly<Record<CurrencyCode, CurrencyMeta>> = {
 }
 
 /**
- * 判断任意值是否为受支持的币种代码。
+ * 汇率的存储倍数：汇率一律乘以 `10^8` 后以整数存储，即保留 8 位小数。
  *
- * 供持久化层（A2）校验来自 localStorage / CSV 导入的外部数据：
- * 这些数据的静态类型不可信，必须先过一遍守卫再交给 {@link getCurrency}。
+ * 指数 8 就是小数位数，与金额的 `10 ** decimals` 是同一套思路，只是位数固定且更大。
  *
- * 用 `Object.hasOwn` 而不是 `in`：后者会命中原型链，
- * `'toString' in CURRENCY_MAP` 为 `true`，会把 `toString` 误判成合法币种。
+ * 为什么不用金额那套 `10^decimals`：汇率的精度需求比金额高得多。
+ * JPY → CNY 这类汇率只有 `0.047`，按两位小数存会变成 `0.05`，误差超过 5%。
  *
- * @param value 待校验的值，类型未知
- * @returns 是合法币种代码时为 `true`，并收窄为 {@link CurrencyCode}
+ * 为什么是 8 位而不是 6 位：6 位在大额兑换时会丢分。
+ * 例：换 100 万 JPY，汇率的 6 位截断误差 `5×10^-7` 会导致 `1000000 × 5×10^-7 = 0.5` 单位的偏差，
+ * 已经可见；8 位时该偏差降到 `0.005`，低于「分」的精度，任何场景都不可观测。
+ *
+ * `Number.MAX_SAFE_INTEGER` 约 `9.007×10^15`，配合 8 位可表示到 `9×10^7` 的汇率，
+ * 远超任何真实汇率区间（`0.00000001 ~ 1000`）。
+ *
  * @example
- * isCurrencyCode('CNY')       // true
- * isCurrencyCode('toString')  // false（`in` 运算符会误判为 true）
+ * 7.3      → 730000000
+ * 0.047523 → 4752300
  */
-export function isCurrencyCode(value: unknown): value is CurrencyCode {
-  return typeof value === 'string' && Object.hasOwn(CURRENCY_MAP, value)
-}
-
-/**
- * 按币种代码取元数据。
- *
- * 参数类型是 {@link CurrencyCode}，正常情况下 `if` 分支不可达；
- * 保留它是为了拦住「用 `as CurrencyCode` 把脏数据强转进来」的情况
- * （典型场景：localStorage 读回的数据）。正规的外部数据应先过 {@link isCurrencyCode}。
- *
- * 非法代码抛错而不是静默回退到人民币——静默回退会让
- * 「币种写错」这类 bug 一直藏到金额显示异常时才暴露。
- *
- * @param code 币种代码
- * @returns 对应的币种元数据
- * @throws 当 `code` 不在 {@link CURRENCY_MAP} 中时抛出
- * @example
- * getCurrency('JPY').decimals  // 0
- */
-export function getCurrency(code: CurrencyCode): CurrencyMeta {
-  const meta = CURRENCY_MAP[code]
-  if (!meta) throw new Error(`未知币种: ${code}`)
-  return meta
-}
-
-/**
- * 按币种代码取小数位数，等价于 `getCurrency(code).decimals`。
- *
- * @param code 币种代码
- * @returns 该币种的小数位数
- */
-export function getCurrencyDecimals(code: CurrencyCode): number {
-  return getCurrency(code).decimals
-}
+export const RATE_SCALE = 10 ** 8
 
 /**
  * 账户，可以是资产账户（储蓄卡、现金…）或负债账户（花呗、信用卡…）。
@@ -190,26 +191,53 @@ export interface Category {
 }
 
 /**
+ * 跨境 / 跨币种交易的原始交易信息。
+ *
+ * 用于「交易币种 ≠ 记账币种」的场景：例如用 CNY 账户支付一笔 1000 JPY 的订单，
+ * 记账金额是账户实际扣款（`Transaction.amount`，CNY），而原始交易是 1000 JPY。
+ * 两者都保留，才能既算准余额，又显示「1000 JPY ≈ 68.50 CNY」。
+ *
+ * @remarks
+ * 三个字段**同时存在或同时缺席**，由 `Transaction.foreign` 整体承载，
+ * 避免「填了一半」的中间状态。同币种交易不填本对象。
+ */
+export interface ForeignExchange {
+  /** 原始交易金额（整数最小单位，以 `currency` 为准） */
+  amount: number
+  /** 原始交易币种 */
+  currency: CurrencyCode
+  /**
+   * 交易时的汇率（整数，乘以 {@link RATE_SCALE}，即 8 位小数）。
+   * 方向：`1 单位 currency 可兑换 rate / RATE_SCALE 单位记账币种`。
+   */
+  rate: number
+}
+
+/**
  * 一笔支出或收入记录。
  *
  * @remarks
- * 转账请用 {@link Transfer}，不要用本类型硬凑，否则会污染当月收支统计。
+ * **与 `Transfer` 的区别**：本类型只表示资金跨越资产边界（外部与内部的进/出），
+ * 账户之间的资金（内部与内部）流动请用 {@link Transfer}。
+ * 如果把转账硬塞进本类型，会让它被算进当月收支，统计失真。
  *
- * **业务边界判据**：`expense` / `income` 衡量的是**净资产**的跨界变化，
- * 而不是某个资产账户余额的变化——记在负债账户上的消费同样使净资产减少，
- * 因此仍属 `expense`（详见 README 的「业务边界判定」）。
- *
- * `currency` 与 `amount` 在同一对象里成对保存，防止「金额与币种靠账户间接绑定」
- * 导致的对不上问题：
- * - 账户日后改币种，历史记录的单位不会被改写；
- * - 读取记录时无需联表查账户即可格式化显示。
+ * **为什么每笔都要存 `currency`**：`amount` 是整数最小单位，脱离币种就没有意义
+ * （`314` 可能是 3.14 元，也可能是 314 日元）。若靠 `accountId` 反查账户币种，
+ * 会导致两个问题：
+ * - 账户后续更改币种会篡改历史记录的金额含义；
+ * - 列表渲染要额外联表。
  *
  * 铁律：`currency` 必须与 `accountId` 指向账户当前币种一致，由 A2 持久化层校验。
  */
 export interface Transaction {
   /** 唯一标识 */
   id: string
-  /** 所属域：支出 or 收入 */
+  /**
+   * 所属域：支出 or 收入。
+   *
+   * 判据是**净资产**是否变化，不是「资产账户余额是否减少」：
+   * 花呗（负债账户）刷卡消费同样记为 `expense`，因为欠款增加、净资产减少。
+   */
   domain: BillDomain
   /** 金额（整数最小单位，始终为正数，方向由 `domain` 决定） */
   amount: number
@@ -219,11 +247,33 @@ export interface Transaction {
   categoryId: string
   /** 账户 id（必填，默认账户策略见 README） */
   accountId: string
-  /** 记账日期，ISO 日期字符串，形如 `2026-11-26` */
-  date: string
+  /**
+   * 消费发生时间，分钟精度，本地时区，形如 `2026-11-26T08:30`。
+   *
+   * 不用毫秒：实际来源（手动 / AI 识别 / CSV 导入）最多精确到分钟，
+   * 毫秒位只是噪声，还会诱导调用方误以为可以靠毫秒差判重复。
+   */
+  occurredAt: string
+  /** 消费时间的精度，决定去重时能否按时间差比较，见 {@link OccurredPrecision} */
+  occurredPrecision: OccurredPrecision
+  /**
+   * 原始交易信息，仅当「交易币种 ≠ 记账币种」时填写。
+   *
+   * 例：用 CNY 账户支付 1000 JPY 的订单，`amount` / `currency` 记账户实际扣款（CNY），
+   * 本字段记原始交易的 1000 JPY 与当时的汇率。
+   * 同币种交易留空，不要为了「字段整齐」塞一个汇率 1 的对象。
+   */
+  foreign?: ForeignExchange
   /** 备注 */
   note?: string
-  /** 创建时间戳（毫秒），用于排序与同步冲突判定 */
+  /**
+   * 创建时间戳（毫秒）。
+   *
+   * **不是消费时间**：补录小票、隔几天才记账时，它与 `occurredAt` 可能差很多天，
+   * 因此不能用来替代消费时间，也不能单独作为去重依据。
+   * 它的作用是：为 AI 自动记账等「消费即入库」的场景提供辅助判断，
+   * 以及排序与多端同步的冲突判定。
+   */
   createdAt: number
   /** 最后修改时间戳（毫秒），用于多端合并 */
   updatedAt: number
@@ -235,36 +285,19 @@ export interface Transaction {
  * - `internal`：资产 ↔ 资产，换卡 / 换汇 / 账户间调拨
  * - `repayment`：资产 → 负债，还款（还花呗、信用卡）
  * - `borrowing`：负债 → 资产，借款到账
- * - `liabilityInternal`：负债 ↔ 负债，卡片间转移欠款
+ * - `liabilityInternal`：负债 ↔ 负债，卡片间转移欠款（例如信用卡还信用卡）
  */
 export type TransferKind = 'internal' | 'repayment' | 'borrowing' | 'liabilityInternal'
-
-/**
- * 判断转账的默认业务类型（未显式指定 `kind` 时使用）。
- *
- * @param fromKind 转出账户类型
- * @param toKind 转入账户类型
- * @returns 由两个账户类型推导出的转账类型
- * @example
- * resolveTransferKind('asset', 'liability')  // 'repayment'
- * resolveTransferKind('liability', 'liability')  // 'liabilityInternal'
- */
-export function resolveTransferKind(fromKind: AccountKind, toKind: AccountKind): TransferKind {
-  if (fromKind === 'asset' && toKind === 'asset') return 'internal'
-  if (fromKind === 'asset' && toKind === 'liability') return 'repayment'
-  if (fromKind === 'liability' && toKind === 'asset') return 'borrowing'
-  return 'liabilityInternal'
-}
 
 /**
  * 一笔账户间转账（内部资金流动）。
  *
  * @remarks
- * 铁律：转账只改变资金所在账户，**不计入当月收支、不影响总净资产**。
+ * 铁律：转账只改变资金所在账户（内部之间流动），**不计入当月收支、不影响总净资产**。
  * - 偿还欠款：资产账户 → 负债账户（如还花呗）
  * - 借款入账：负债账户 → 资产账户
  * - 资产互转：资产账户 → 资产账户
- * - 负债互转：负债账户 → 负债账户
+ * - 负债互转：负债账户 → 负债账户 (如信用卡还信用卡)
  *
  * **转出 / 转入两侧各自记录金额与币种**，以支持跨币种场景（外汇购汇、结汇、
  * 多币种账户换汇）：
@@ -290,15 +323,38 @@ export interface Transfer {
   /** 转入币种，须与 `toAccountId` 账户的币种一致 */
   toCurrency: CurrencyCode
   /**
+   * 录入时的汇率（整数，乘以 {@link RATE_SCALE}，即 8 位小数）。**必填，不可为空**。
+   *
+   * 方向：`1 单位 fromCurrency = rate / RATE_SCALE 单位 toCurrency`
+   * （即 `rate = toAmount折元 / fromAmount折元 × RATE_SCALE`）。
+   *
+   * **同币种转账填 `RATE_SCALE`（即 1.0）**，不要留空：字段恒有值，
+   * 调用方不必为「没有汇率」写特殊分支，也避免「undefined 到底表示 1 还是未知」的歧义。
+   *
+   * **只用于溯源与展示，不参与金额计算**：真实金额已固化在 `fromAmount` / `toAmount` 中。
+   * 保留它有两个用途：
+   * - 追溯这笔账当时按什么汇率换的；
+   * - 用 `rate × fromAmount` 重算 `toAmount`，与存档值比对，即可看出用户手动调整了多少差额
+   *   （例如银行实际成交价与牌价不同，用户改了金额）。
+   *
+   * 反推值受四舍五入影响，不如本字段准确；需要反推时见 README「反推汇率」。
+   */
+  rate: number
+  /**
    * 转账业务类型；缺省时按两侧账户类型用 {@link resolveTransferKind} 推断。
-   * 仅用于展示与统计归类，不参与金额计算。
+   * 仅用于界面文案与统计归类，不参与净资产等任何金额计算。
    */
   kind?: TransferKind
-  /** 转账日期，ISO 日期字符串，形如 `2026-11-26` */
-  date: string
+  /**
+   * 转账发生时间，分钟精度，本地时区，形如 `2026-11-26T08:30`。
+   * 精度约定与 {@link Transaction.occurredAt} 一致。
+   */
+  occurredAt: string
+  /** 转账时间的精度，见 {@link OccurredPrecision} */
+  occurredPrecision: OccurredPrecision
   /** 备注 */
   note?: string
-  /** 创建时间戳（毫秒） */
+  /** 创建时间戳（毫秒）；含义同 {@link Transaction.createdAt} */
   createdAt: number
   /** 最后修改时间戳（毫秒） */
   updatedAt: number

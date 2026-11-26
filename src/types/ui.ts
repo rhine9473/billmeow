@@ -53,21 +53,6 @@ export const CURRENCY_DISPLAY: Readonly<Record<CurrencyCode, CurrencyDisplay>> =
 }
 
 /**
- * 按币种代码取展示信息。
- *
- * @param code 币种代码
- * @returns 该币种的名称与符号
- * @throws 当 `code` 不在 {@link CURRENCY_DISPLAY} 中时抛出
- * @example
- * getCurrencyDisplay('JPY').symbol  // '¥'
- */
-export function getCurrencyDisplay(code: CurrencyCode): CurrencyDisplay {
-  const display = CURRENCY_DISPLAY[code]
-  if (!display) throw new Error(`未知币种: ${code}`)
-  return display
-}
-
-/**
  * 账户的视觉样式（纯 UI 层）。
  *
  * 与 `src/types/bill.ts` 的 `Account` 分开存放：`Account` 只存业务数据，

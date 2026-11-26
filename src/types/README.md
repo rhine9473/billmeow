@@ -16,22 +16,50 @@
 
 | 位置 | 放什么 | 禁止 |
 | ---- | ------ | ---- |
-| `src/types/bill.ts` | 业务实体、枚举、换算常量，以及**仅依赖本文件的纯查表/派生函数** | 展示文案、图标、颜色、排序、分组 |
-| `src/types/ui.ts` | 展示属性：币种名称/符号、账户图标/颜色、账户分组 | 金额计算、业务判定 |
-| `src/lib/` | **跨文件组合逻辑**，如把 `bill.ts` 与 `ui.ts` 的数据拼成 `AccountView` | 组件、Pinia store |
+| `src/types/bill.ts` | 业务实体、枚举、**常量数据**（`CURRENCY_MAP`、`RATE_SCALE`） | 任何可执行函数、展示文案、图标、排序、分组 |
+| `src/types/ui.ts` | 展示属性的类型与常量（`CurrencyDisplay`、`AccountVisual`、`AccountGroup`） | 任何可执行函数、金额计算、业务判定 |
+| `src/lib/` | **所有函数**：查表、校验、推导、组合（`currency.ts`、`transfer.ts`、`money.ts`） | 组件、Pinia store |
 | `src/stores/` | Pinia 状态与派生 getter | — |
+
+**类型层零逻辑**：`types` 只放 `type` / `interface` / `const` 数据表，**不放 `function`**。
+哪怕是 `getCurrency()` 这种一行查表，也属于可执行逻辑，放 `src/lib/currency.ts`。
+
+这么做的好处很具体：
+- `types` 可以被任何层安全 import，不会带入运行时依赖
+- 函数有明确归属，找「怎么用币种」时去 `lib`，找「币种有哪些」时去 `types`
+- 单测跟着实现走：`lib/currency.ts` 对应 `lib/currency.test.ts`
 
 **关键约束**：`bill.ts` **不得** import `ui.ts`。数据层不依赖 UI 层，否则分层失效。
 方向只能是 `ui.ts → bill.ts`。
 
 **为什么没有 `index.ts`**：本项目多人多分支并行开发，且 UI 层会持续膨胀。
 汇总入口是共享文件、易冲突，且 `export *` 遇到重名会**静默失效**（不报错，名字直接消失）。
-因此调用方显式写路径：`from '../types/bill'` 或 `from '../types/ui'`——
+因此调用方显式写路径：`from '../types/bill'` 或 `from '../lib/currency'`——
 import 路径本身就是分层声明，code review 时一眼能看出依赖方向。
 
 **组合不要散在组件里**：每个组件各拼一遍「账户 + 视觉 + 币种展示」会导致
 兜底逻辑重复且各写各的。统一写成 `src/lib/` 的纯函数，组件只调一次。
 组合函数**不要读 store**，参数传入 `visuals` / `groups` 即可保证可单测。
+
+**为什么值得分两个文件**：单人小项目里合成一个文件更省事，但本项目有两条前提：
+
+1. **多人多分支并行**——文件物理隔离能避免反复冲突在同一个文件上；
+2. **UI 层未来会持续膨胀**——接口导出、个性化配置的量级会远超数据模型，
+   现在合进去迟早要拆，而且那时候改动面更大。
+
+代价是调用方要 import 两个路径，这是刻意接受的成本。
+
+---
+
+## `src/lib/` 提供什么
+
+| 文件 | 导出 | 职责 |
+| ---- | ---- | ---- |
+| `lib/currency.ts` | `getCurrency` / `getCurrencyDecimals` / `isCurrencyCode` / `getCurrencyDisplay` | 币种查表与类型守卫 |
+| `lib/transfer.ts` | `resolveTransferKind` | 按账户类型推导转账语义 |
+| `lib/storage.ts` | `readStorage` / `writeStorage` / `removeStorage` | 本地存储读写（已有） |
+
+> `money.ts`（金额换算工具）属于 A6，届时也放这里。
 
 ---
 
@@ -39,9 +67,11 @@ import 路径本身就是分层声明，code review 时一眼能看出依赖方�
 
 | 导出 | 用途 |
 | ---- | ---- |
-| `CurrencyDisplay` / `CURRENCY_DISPLAY` / `getCurrencyDisplay()` | 币种名称与符号（多语言时只改这里） |
+| `CurrencyDisplay` / `CURRENCY_DISPLAY` | 币种名称与符号数据（多语言时只改这里） |
 | `AccountVisual` / `AccountVisualMap` | 账户的 `icon` 与 `color`，按 `Account.id` 索引 |
 | `AccountGroup` / `AccountGroupMap` | 账户分组，按 `Account.id` → `AccountGroup.id` |
+
+> 查询函数（`getCurrencyDisplay` 等）在 `src/lib/currency.ts`，本文件只有类型与数据。
 
 ### 账户视觉：`icon` 与 `color` 分开
 
@@ -55,6 +85,23 @@ import 路径本身就是分层声明，code review 时一眼能看出依赖方�
 因此分组信息不写进 `Account`，也不进 `bill.ts`。
 
 > 想按「同一张卡」自动分组时，`Account.cardTail` 可以直接作为依据，不必让用户手动建组。
+
+### 哪些字段算「展示」
+
+判断标准不是「字段名听起来像不像 UI」，而是**它参不参与业务规则与金额计算**：
+
+| 字段 | 去向 | 理由 |
+| ---- | ---- | ---- |
+| `Account.currency` | `bill.ts` | 决定金额单位，换算必需 |
+| `Account.cardTail` | `bill.ts` | 参与 CSV 导入去重 |
+| `Account.archived` | `bill.ts` | 决定能否记账，是业务约束 |
+| `Category.builtin` | `bill.ts` | 承载「内置分类不可删除」的规则 |
+| `Category.hidden` / `Category.order` | 待定 | 纯展示，但目前放在实体里，见下方说明 |
+| `icon` / `color` / 分组 | `ui.ts` | 纯视觉，不影响任何计算 |
+
+> `Category.hidden` 与 `Category.order` 更接近展示属性。暂留实体是为了避免
+> A2 同时维护「分类列表 + 视觉映射表」两张数据并保证一致；等分类管理界面落地后
+> 再评估是否迁到 `ui.ts`。迁移时需同步处理存量数据的映射。
 
 ---
 
@@ -213,7 +260,7 @@ function parseAmountForCurrency(input: string, currency: CurrencyCode): number |
 #### 外部数据先过 `isCurrencyCode`
 
 `getCurrency()` 的参数类型是 `CurrencyCode`，类型系统已保证合法。
-从 localStorage / CSV 导入拿到的值静态类型不可信，**必须先用守卫函数收窄**：
+从存储或导入文件拿到的值静态类型不可信，**必须先用守卫函数收窄**：
 
 ```ts
 if (!isCurrencyCode(raw.currency)) {
@@ -349,7 +396,7 @@ if (a === b) { /* ... */ }
 3. **跨币种转账可表达**：单个 `amount` 无法同时描述「转出 100 USD → 到账 730 CNY」。
 
 > 冗余字段的唯一风险是不一致，所以**必须由 A2 的读取校验把关**，
-> 类型系统管不到 localStorage 里的脏数据。
+> 类型系统管不到从存储读回的脏数据。
 
 ---
 
@@ -449,7 +496,7 @@ interface Transaction {
 ```ts
 /* 当月支出 = 所有 expense 记录的 amount 之和（同币种内） */
 const monthExpense = transactions
-  .filter((t) => t.domain === 'expense' && isSameMonth(t.date, month))
+  .filter((t) => t.domain === 'expense' && isSameMonth(t.occurredAt, month))
   .reduce((sum, t) => sum + t.amount, 0)
 
 /* 账户余额 = 初始余额 + 收入 − 支出 + 转入 − 转出 */
@@ -473,7 +520,78 @@ const monthExpense = transactions
 | **`fromCurrency === toCurrency` 时 `fromAmount === toAmount`** | 否则同币种转账会凭空多出/湮灭钱款 |
 | `Transaction.accountId` / `fromAccountId` / `toAccountId` 必须指向存在的账户 | 防悬空引用 |
 | `Category.parentId` 必须指向同 domain 的一级分类 | 分类只允许「一级 + 二级」两层 |
-| `date` 必须是合法的 `YYYY-MM-DD` | 类型层无法约束日期字符串 |
+| `occurredAt` 必须是合法的 `YYYY-MM-DDTHH:mm` | 类型层无法约束时间字符串 |
+| `occurredAt` 的秒与毫秒位必须为 0 | 约定分钟精度，防止写入方随手塞秒 |
+| `occurredPrecision === 'day'` 时 `occurredAt` 必须以 `T12:00` 结尾 | 补齐值的统一约定 |
+| `Transaction.foreign` 存在时，其 `currency` 不得等于 `Transaction.currency` | 同币种交易不应填 `foreign` |
+| `Transaction.foreign.amount` / `rate` 必须为正整数 | 与金额、汇率的通用约束一致 |
+
+---
+
+## 时间字段与去重
+
+### 三个时间各管什么
+
+| 字段 | 含义 | 来源 | 能否参与去重 |
+| ---- | ---- | ---- | ------------ |
+| `occurredAt` | 消费实际发生时间（分钟精度） | 用户选择 / AI 识别 / CSV | ✅ 主要依据 |
+| `occurredPrecision` | 上面那个时间的精度 | 由来源决定 | ✅ 决定判重策略 |
+| `createdAt` | 数据写入系统的时间（毫秒） | 系统生成 | ⚠️ 仅辅助 |
+
+**`createdAt` 不能代替 `occurredAt`。** 补录小票、隔几天才记账时，两者可能差好几天：
+
+```
+11-20 下午喝了杯咖啡，拖到 11-26 才想起来补记
+  occurredAt = '2026-11-20T14:30'   ← 业务事实，这笔钱属于 11-20
+  createdAt  = 11-26 15:32           ← 系统事实，这条数据是 26 号才录入的
+```
+
+如果只用 `createdAt`，这笔支出会被算进 11-26，月度统计就错位了。
+
+### 精度不足时如何补齐
+
+| 来源 | `occurredAt` | `occurredPrecision` |
+| ---- | ------------ | ------------------- |
+| CSV 带时分（`2026-11-26 14:30:25`） | `2026-11-26T14:30`（截掉秒） | `minute` |
+| CSV 只有日期 | `2026-11-26T12:00` | `day` |
+| 用户只选日期 | `2026-11-26T12:00` | `day` |
+| 用户填了时刻 | 按填写值 | `minute` |
+
+**为什么补齐用正午而不是零点**：正午向前后各留 12 小时余量，
+时区偏移或夏令时不会让它跨到前一天或后一天。
+
+### 去重判据
+
+按核心字段匹配，再按时间精度分档：
+
+| 条件 | 相似度 | UI 展示 |
+| ---- | ------ | ------- |
+| 两侧均为 `minute`，时间差 ≤ N 分钟，且金额/账户/分类相同 | `exact` | 「疑似同一笔」 |
+| 任一侧为 `day`，同天 + 金额/账户/分类相同 | `similar` | 「可能重复」 |
+| 其余 | — | 不提示 |
+
+**铁律**：
+
+- 任何情况下都**不自动删除**记录，只标记并交给用户确认；
+- `occurredPrecision === 'day'` 的账单无法按时间差判重（同天多笔同额消费都补成 `12:00`），
+  只能退化为「同天 + 同金额 + 同账户」；
+- `createdAt` 可作为**辅助**信号（如 AI 自动记账的消费与入库几乎同时发生），
+  但不能作为主判据，也不能单独作为判重依据。
+
+### 无法判定时怎么办
+
+有两种情况去重逻辑永远分不清，**只能交给用户**：
+
+| 情况 | 例子 | 处理 |
+| ---- | ---- | ---- |
+| 同日同额同账户，且都只到日精度 | 同一天两次各 18 元的咖啡，都没填时刻 | 标记 `similar`，由用户判定 |
+| 两笔真实消费，金额碰巧相同 | 同一家店同一天买两次同样的东西 | 标记 `similar`，由用户判定 |
+
+**不要试图用 `createdAt` 的毫秒差来区分这两笔**：用户连续录入或通过账单导入的两笔时，
+创建时间也只差几十毫秒，但这恰恰是两笔不同的账；反过来，同一笔账重复导入两次，
+创建时间可能差好几天。**毫秒差在这里没有任何判别力。**
+
+---
 
 ---
 
@@ -485,17 +603,20 @@ const monthExpense = transactions
 
 ### 跨币种转账怎么算
 
-`Transfer` 转出/转入两侧各自存 `amount` + `currency`，换算率由两侧反推：
+`Transfer` 转出/转入两侧各自存 `amount` + `currency`：
 
 ```ts
 transfer.fromAmount   = 10000   /* 100.00 USD（decimals = 2）*/
 transfer.fromCurrency = 'USD'
 transfer.toAmount     = 73000   /* 730.00 CNY（decimals = 2）*/
 transfer.toCurrency   = 'CNY'
-
-/* 隐含汇率 = 转入金额（折元） / 转出金额（折元） */
-const rate = toMajor(73000, 2) / toMajor(10000, 2)   /* 7.3 */
+transfer.rate         = 730000000  /* 7.3 × RATE_SCALE */
 ```
+
+**金额是权威数据，汇率是溯源数据**：
+
+- `fromAmount` / `toAmount` 是真实成交金额，**所有金额计算只看它们**
+- `rate` 只记录录入那一刻的汇率，用于追溯与差额分析
 
 注意：两侧 `decimals` 可能不同（USD 2 位、JPY 0 位），反推汇率前**必须先把两边各自按自己的 `decimals` 折成元**，
 不能直接 `toAmount / fromAmount`，否则 JPY ↔ CNY 的汇率会差 100 倍。
@@ -505,6 +626,102 @@ const rate = toMajor(73000, 2) / toMajor(10000, 2)   /* 7.3 */
 - `fromAccountId` 账户余额 **减** `fromAmount`
 - `toAccountId` 账户余额 **加** `toAmount`
 - 两者的币种可能不同，各自按自己的币种累加即可
+
+### 汇率：`Transfer.rate`
+
+**方向**：`1 单位 fromCurrency = rate / RATE_SCALE 单位 toCurrency`。
+
+**精度**：整数，乘以 `RATE_SCALE = 10^8`（8 位小数）。
+
+| 汇率 | 存储值 |
+| ---- | ------ |
+| 7.3（USD→CNY） | `730000000` |
+| 0.047523（JPY→CNY） | `4752300` |
+
+为什么不用金额那套 `10^decimals`：JPY→CNY 的汇率只有 `0.047`，按 2 位小数存会变成 `0.05`，误差超过 5%。
+
+为什么是 8 位而不是 6 位：6 位在大额兑换时会丢分。换 100 万 JPY 时，6 位的截断误差会导致 `0.5` 单位的偏差（金额精度是分，已可观测）；8 位时偏差降到 `0.005`，任何场景都不可观测。
+
+**`rate` 不参与金额计算**，只做两件事：
+
+1. **溯源**：这笔账当时按什么汇率换的；
+2. **差额分析**：`rate × fromAmount折元` 与存档的 `toAmount折元` 比对，差值即用户手动调整的金额
+   （银行实际成交价与牌价不同时，用户会改金额；此时 `rate` 保留原值，差额反而成了有用信息）。
+
+**`rate` 必填，同币种转账填 `RATE_SCALE`（即 1.0）**，不要留空：
+字段恒有值，调用方不必为「没有汇率」写特殊分支，也避免「`undefined` 到底表示 1 还是未知」的歧义。
+
+**为什么保留一个可能不准的 `rate`**：金额才是权威数据（`fromAmount` / `toAmount`），
+`rate` 只是录入时的参考汇率。用户按银行实际成交价手改金额后，两者便对不上——
+这不是数据坏了，而是**汇兑差额**的信息，不应自动反向修正 `rate`。
+
+> **账户余额折算属于另一个问题**：历史账单的汇率永远冻结在 `Transfer` 里，不随实时汇率变动；
+> 而「多币种账户合计成 CNY」这类折算才跟随实时汇率，且属于 A5 的展示层逻辑。
+> 汇率实时缓存的设计留到 A5，届时记录在本节。
+
+### 对外跨币种交易：`Transaction.foreign`
+
+**结汇 / 购汇（账户之间）用 `Transfer`；用外币买东西（钱流向外部）用 `Transaction`。**
+两者边界看资金是否流出资产池，不是看币种是否相同。
+
+当「交易币种 ≠ 记账币种」时，`Transaction` 用 `foreign` 承载原始交易：
+
+```ts
+/* CNY 账户支付了一笔 1000 JPY 的订单，实际扣款 68.50 元 */
+{
+  domain: 'expense',
+  amount: 6850,                    /* 账户实际扣款：68.50 CNY */
+  currency: 'CNY',                 /* 记账币种 = 账户币种 */
+  accountId: 'cny-card',
+  foreign: {
+    amount: 1000,                  /* 原始交易金额 */
+    currency: 'JPY',               /* 原始交易币种 */
+    rate: 6850000,                 /* 1 JPY = 0.0685 CNY，× RATE_SCALE */
+  },
+}
+```
+
+**为什么三个字段打包成 `foreign` 而不是平铺**：它们必须同时存在或同时缺席，
+平铺成三个可选字段会出现「填了金额没填币种」的中间状态，类型系统拦不住。
+打包后一个字段要么有要么没有，内部三项必填。
+
+**同币种交易不要填 `foreign`**，不要为了「字段整齐」塞一个汇率 1 的对象 ——
+这会让「是否有外币交易」的判断从 `foreign != null` 变成需要逐字段检查。
+
+**与 `Transfer.rate` 的分工**：
+
+| 场景 | 用什么 | 汇率字段 |
+| ---- | ------ | -------- |
+| 美元户 → 人民币户（结汇） | `Transfer` | `Transfer.rate` |
+| CNY 账户支付 1000 JPY 订单 | `Transaction` + `foreign` | `foreign.rate` |
+| CNY 账户买 CNY 商品 | `Transaction` | 不填 |
+
+两者的 `rate` 共用同一个 `RATE_SCALE`，精度与方向约定一致。
+
+### 为什么 `foreign` 可选、`rate` 必填
+
+看似不一致，实则不同：
+
+| 字段 | 可选性 | 理由 |
+| ---- | ------ | ---- |
+| `Transfer.rate` | **必填** | 单个数值，同币种就是 `1.0`，恒有意义 |
+| `Transaction.foreign` | **可选** | 一组原始交易信息，同币种交易根本不存在「另一个币种」，塞进去纯冗余 |
+
+关键区别：`rate` 填 1 是无害的默认值；`foreign` 填上同币种信息会让
+「是否有跨币种交易」的判断从一次 `!= null` 退化成要逐字段比较币种。
+
+### 汇率方向容易搞反
+
+`21.451923` 这类数字要看清楚是「每 1 单位」还是「每 100 单位」的报价：
+
+```
+银行牌价：100 JPY = 21.451923 CNY   ← 每百单位报价（外汇市场惯例）
+内部存放：1 JPY = 0.21451923 CNY    ← 本模型统一按 1:1 存储
+```
+
+**本模型一律按 1 单位对 1 单位存储**，不带 `rateUnit` 这类字段。
+按百单位报价的币种（JPY 等）在 UI 层换算显示即可；
+数据层保持单一语义，避免同一条汇率因单位不同而含义歧义。
 
 ---
 
@@ -519,13 +736,25 @@ const rate = toMajor(73000, 2) / toMajor(10000, 2)   /* 7.3 */
 - [ ] 跨币种数值没有直接相加
 - [ ] 跨币种转账反推汇率前，两侧已各自按自己的 `decimals` 折成元
 - [ ] 反推汇率前判断了分母不为 0
+- [ ] 汇率存储使用 `RATE_SCALE = 10^8`，没有按金额的 `10^decimals` 存
+- [ ] 汇率方向是「1 单位 fromCurrency = rate / RATE_SCALE 单位 toCurrency」
+- [ ] 按百单位报价的外汇牌价（如 `100 JPY`）在录入时已折算成 1:1，没有直接存百单位值
+- [ ] 金额计算只用 `fromAmount` / `toAmount`，没有拿 `rate` 参与计算
+- [ ] 同币种转账的 `rate` 填的是 `RATE_SCALE`（1.0），没有留空
+- [ ] 用户手改金额后保留了原始 `rate`，没有反向覆盖它
+- [ ] 跨币种「对外消费」用 `Transaction.foreign`，没有误用 `Transfer`
+- [ ] 同币种交易的 `foreign` 是 `undefined`，没有填汇率 1 的对象
 - [ ] 用户输入的金额用 `Number.isSafeInteger` 校验过，且拦截了 `NaN`
 - [ ] 解析金额时小数位数是「数出来的」，没有拼动态正则（`decimals = 0` 会抛异常）
 - [ ] `decimals` 是从币种查的（`getCurrency(code).decimals` 或 `getCurrencyDecimals(code)`），底层 `money.ts` 不依赖币种表
-- [ ] 外部数据（localStorage / CSV）先过 `isCurrencyCode` 再交给 `getCurrency`
+- [ ] 外部数据（存储读回 / 导入文件）先过 `isCurrencyCode` 再交给 `getCurrency`
 - [ ] `accountId` 保持必填，没有为了「懒人记账」改成可选
 - [ ] 区分收支 / 转账时看**净资产是否变化**，不是看资产账户余额是否变化
 - [ ] 负债账户的消费记为 `expense`，没有因为「钱没动」而漏记
 - [ ] `bill.ts` 没有 import `ui.ts`，依赖方向只有 `ui.ts → bill.ts`
 - [ ] 展示文案 / 图标 / 颜色 / 排序 / 分组没有写进 `bill.ts`
 - [ ] 账户 + 视觉 + 币种的组合逻辑写在 `src/lib/`，没有散落在各组件里重复实现
+- [ ] 时间只存 `occurredAt`（分钟精度）+ `occurredPrecision`，没有用 `createdAt` 代替消费时间
+- [ ] 只知日期的记录补成 `T12:00` 并标记 `day`，没有补成 `T00:00`
+- [ ] 去重不自动删除记录，`day` 精度没有参与按时间差判重
+- [ ] 没有用 `createdAt` 的毫秒差当作判重依据

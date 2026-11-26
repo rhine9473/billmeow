@@ -24,6 +24,9 @@ export default defineConfig({
         'src/**/*.{test,spec}.ts',
         'src/main.ts',
         'src/**/*.d.ts',
+        /* 类型层只有 type / interface / const 数据表，没有可执行语句。
+           V8 对 0 语句的文件会报 100%，属于误导性数据，直接排除。 */
+        'src/types/**',
       ],
     },
   },
