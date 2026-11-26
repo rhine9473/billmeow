@@ -1,0 +1,4 @@
+- [x] 主题模式 @chairowell
+- [x] 主题色 @chairowell
+- [ ] PWA @chairowell
+- [ ] i18n 多语言 @chairowell 
