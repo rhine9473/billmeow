@@ -44,7 +44,7 @@ jobs:
       # 把 HTML 报告以 artifact 形式上传，失败时也保留，便于排查
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage/
