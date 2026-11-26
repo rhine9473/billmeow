@@ -13,6 +13,19 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.{test,spec}.ts'],
+    coverage: {
+      /* 用 V8 原生覆盖率，比 istanbul 快，与 vitest 5 内置支持一致 */
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      /* 只统计业务源码，排除入口、类型声明与测试文件本身 */
+      include: ['src/**/*.{ts,vue}'],
+      exclude: [
+        'src/**/*.{test,spec}.ts',
+        'src/main.ts',
+        'src/**/*.d.ts',
+      ],
+    },
   },
   plugins: [
     vue(),
