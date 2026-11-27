@@ -191,10 +191,16 @@ describe('useTheme', () => {
 
     it('localStorage 内容损坏时回退到默认值', () => {
       localStorage.setItem(THEME_KEY, '{ 这不是合法 JSON')
+      /* 该路径会按预期记一条 console.error，mock 掉避免污染测试输出 */
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       const { theme } = useTheme()
 
       expect(theme.value).toBe('auto')
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[storage] 读取'),
+        expect.any(Error),
+      )
     })
 
     it('旧版本数据缺少 theme 字段时补默认值', () => {
