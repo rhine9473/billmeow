@@ -57,7 +57,8 @@ import 路径本身就是分层声明，code review 时一眼能看出依赖方�
 | ---- | ---- | ---- |
 | `lib/currency.ts` | `getCurrency` / `getCurrencyDecimals` / `isCurrencyCode` / `getCurrencyDisplay` | 币种查表与类型守卫 |
 | `lib/transfer.ts` | `resolveTransferKind` | 按账户类型推导转账语义 |
-| `lib/storage.ts` | `readStorage` / `writeStorage` / `removeStorage` | 本地存储读写（已有） |
+| `lib/storage.ts` | `readStorage` / `writeStorage` / `removeStorage` | 本地存储读写（设置项等轻量数据） |
+| `lib/db.ts` | `loadAccounts` / `saveAccount` / `saveTransaction` / `saveTransfer` / `saveCategories` 等 | 业务数据持久化（IndexedDB，不可用时降级 localStorage），含 A2 跨字段校验与版本迁移 |
 
 > `money.ts`（金额换算工具）属于 A6，届时也放这里。
 
@@ -525,6 +526,53 @@ const monthExpense = transactions
 | `occurredPrecision === 'day'` 时 `occurredAt` 必须以 `T12:00` 结尾 | 补齐值的统一约定 |
 | `Transaction.foreign` 存在时，其 `currency` 不得等于 `Transaction.currency` | 同币种交易不应填 `foreign` |
 | `Transaction.foreign.amount` / `rate` 必须为正整数 | 与金额、汇率的通用约束一致 |
+
+> 上表的落地实现在 `src/lib/db.ts`（`validateAccount` / `validateTransaction` /
+> `validateTransfer` / `validateCategoryTree` / `validateUniqueCardTail`），
+> 写入前拒绝，读回时也再校验一次（存储内容可被外部篡改）。
+
+---
+
+## 数据库版本升级与数据迁移
+
+> 完整说明（含跨版本策略、慢迁移的导出 / 导入卸载方案、已知边界）见 [`src/lib/DB.md`](./../lib/DB.md)。
+> 本节只保留写代码时需要立刻对照的要点。
+
+`src/lib/db.ts` 用 IndexedDB 原生版本机制（`indexedDB.open(name, version)`）管理结构，
+`DB_VERSION` 与 `MIGRATIONS` 表一一对应。**`MIGRATIONS` 的键是「目标版本」**，
+`MIGRATIONS[2]` 表示「升级到 v2 要做的事」，不是「v1 的库表」。
+
+### 改结构时的步骤
+
+1. `DB_VERSION` +1；
+2. 在 `MIGRATIONS` 里**新增**一项 «目标版本 → 升级函数»，只描述 `v(n-1) → v(n)` 的增量，
+   **不要**回头修改已有项（已装机的用户不会重跑旧版本函数）；
+3. 已有数据用 `openCursor` 遍历后 `cursor.update({...value, 新字段})` 改写，
+   或只补索引（`ensureIndexes` 是幂等的）；
+4. **不要 `deleteObjectStore` 后重建**——那会连同用户的账目一起清空。
+
+隔了好几版才打开的老客户端会按顺序跑 `v1 → v2 → v3` 的每一步，不需要为跳版写特例；
+因为失败整体回滚，也不会出现「升级只完成一半」的中间态。
+
+### 两条硬性约束
+
+- **升级事务里不能 `await`**：`onupgradeneeded` 的事务在「没有待处理请求」时会自动提交，
+  一 `await` 后续写入就全部丢失。需要读 `localStorage` 或做异步计算时，
+  把「要做什么」登记下来，等新连接拿到后另开事务执行（本项目即 `postMigration`）。
+- **失败必须回滚**：迁移函数抛错时调 `tx.abort()`，IndexedDB 会整体回滚到旧版本，
+  用户数据原样保留，下次打开可重试。库版本比代码新（`VersionError`）必须拒绝打开，
+  **不回退写兜底存储**，否则新旧结构混写会真正损坏数据。
+
+### 数据来源迁移
+
+早期版本在 IndexedDB 不可用时会降级写入 `localStorage`（键前缀 `billmeow:fallback:`）。
+库升级时若发现兜底键里有数据，会自动搬进 IndexedDB：
+
+| 情况 | 处理 |
+| ---- | ---- |
+| 同一 `id` 两边都有 | 以 IndexedDB 为准（用户后来的操作更新） |
+| 搬运成功 | 删除兜底键，避免下次重复搬迁 |
+| 搬运失败 | 日志 + 提示，兜底数据原样保留，刷新后重试 |
 
 ---
 

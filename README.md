@@ -54,8 +54,14 @@ billmeow/
 │   ├── main.ts            # 应用入口：初始化主题、挂载应用
 │   ├── index.scss         # 全局样式入口（引入重置样式等）
 │   ├── lib/               # 工具函数
-│   │   ├── storage.ts     # localStorage 读写封装
-│   │   └── storage.test.ts
+│   │   ├── currency.ts    # 币种查表与校验
+│   │   ├── db.ts          # 持久化层：IndexedDB（不可用时降级 localStorage）
+│   │   ├── db.test.ts
+│   │   ├── DB.md          # 持久化层设计：版本升级、跨版本迁移、备份导出方案
+│   │   ├── storage.ts     # localStorage 读写封装（设置项等轻量数据）
+│   │   ├── storage.test.ts
+│   │   ├── transfer.ts    # 转账类型推导
+│   │   └── transfer.test.ts
 │   ├── router/
 │   │   └── index.ts       # 路由表
 │   ├── stores/            # 全局状态
@@ -64,6 +70,10 @@ billmeow/
 │   ├── styles/
 │   │   ├── reset.scss     # 全局样式重置
 │   │   └── theme.scss     # 主题颜色 token
+│   ├── types/             # 数据模型与展示属性（约定见 types/README.md）
+│   │   ├── bill.ts        # 业务实体（金额为整数最小单位）
+│   │   ├── ui.ts          # 纯展示属性
+│   │   └── README.md
 │   └── views/             # 页面
 │       └── settings/      # 设置页
 │           ├── index.vue  # 页面入口
