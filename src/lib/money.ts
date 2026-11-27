@@ -16,8 +16,8 @@
  * @see ../types/README.md
  */
 
-import { getCurrencyDecimals, type CurrencyCode } from '../types/bill'
-import { getCurrencyDisplay } from '../types/ui'
+import { getCurrencyDecimals, getCurrencyDisplay } from './currency'
+import type { CurrencyCode } from '../types/bill'
 
 /**
  * 把元金额（小数数字）换算为整数最小单位。
@@ -134,7 +134,7 @@ export function parseAmountForCurrency(input: string, currency: CurrencyCode): n
 /**
  * 把整数最小单位格式化为带货币符号的展示文本。
  *
- * 符号来自 `types/ui` 的 `CURRENCY_DISPLAY`；负号放在货币符号之前，
+ * 符号来自 `lib/currency` 的 `getCurrencyDisplay`；负号放在货币符号之前，
  * 形如 `-¥1,234.56`。
  *
  * @param minor 整数最小单位（可为负）
