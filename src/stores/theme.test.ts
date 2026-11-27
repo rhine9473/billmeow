@@ -177,6 +177,7 @@ describe('useTheme', () => {
         theme: 'black',
         transition: { enabled: true, duration: 260 },
         accent: 'indigo',
+        tabBarLayout: 'flush',
       })
     })
 
@@ -274,6 +275,7 @@ describe('useTheme', () => {
         theme: 'auto',
         transition: { enabled: false, duration: 120 },
         accent: 'indigo',
+        tabBarLayout: 'flush',
       })
     })
   })
@@ -296,7 +298,52 @@ describe('useTheme', () => {
         theme: 'auto',
         transition: { enabled: true, duration: 260 },
         accent: 'indigo',
+        tabBarLayout: 'flush',
       })
+    })
+
+    it('重置会把页签样式恢复为贴边', async () => {
+      const { tabBarLayout, resetTheme } = useTheme()
+
+      tabBarLayout.value = 'floating'
+      await nextTick()
+
+      resetTheme()
+      await nextTick()
+
+      expect(tabBarLayout.value).toBe('flush')
+    })
+  })
+
+  describe('页签样式', () => {
+    it('默认贴边', () => {
+      const { tabBarLayout } = useTheme()
+      expect(tabBarLayout.value).toBe('flush')
+    })
+
+    it('切换到悬浮会持久化', async () => {
+      const { tabBarLayout } = useTheme()
+
+      tabBarLayout.value = 'floating'
+      await nextTick()
+
+      expect(storedSettings()).toMatchObject({ tabBarLayout: 'floating' })
+    })
+
+    it('启动时读取已保存的悬浮样式', () => {
+      localStorage.setItem(THEME_KEY, JSON.stringify({ tabBarLayout: 'floating' }))
+
+      const { tabBarLayout } = useTheme()
+
+      expect(tabBarLayout.value).toBe('floating')
+    })
+
+    it('非法值回退到贴边', () => {
+      localStorage.setItem(THEME_KEY, JSON.stringify({ tabBarLayout: 'pill' }))
+
+      const { tabBarLayout } = useTheme()
+
+      expect(tabBarLayout.value).toBe('flush')
     })
   })
 })

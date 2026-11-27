@@ -4,6 +4,9 @@ import { readStorage, writeStorage } from '../lib/storage'
 /** 主题模式：跟随系统 / 白色 / 暗色 / 纯黑 */
 export type ThemeMode = 'auto' | 'light' | 'dark' | 'black'
 
+/** 底部页签样式：贴边（默认，贴住屏幕底部） / 悬浮（四周留边距的独立圆角块） */
+export type TabBarLayout = 'flush' | 'floating'
+
 /** 主题切换过渡配置；duration 为 0 表示关闭动画 */
 export interface ThemeTransition {
   enabled: boolean
@@ -25,18 +28,22 @@ export interface AccentPreset {
 
 /**
  * 8 种精选主题色。
- * 每个颜色准备深浅两套：浅色主题用较深的色，深色/纯黑主题用较亮的色，
- * 这样无论哪种主题都能保证足够的对比度，不需要运行时计算亮度。
+ * 每个颜色准备深浅两套：浅色主题用较深的饱和色，深色/纯黑主题用中等饱和度的柔和色。
+ *
+ * 深色值在 Tailwind 400 档与低饱和灰调之间取折中：饱和度 37%–58%、亮度 49%–66%。
+ * 既能一眼分辨出八种色系（不像 20% 饱和度那样发灰蒙），
+ * 又不会像 300 档粉彩色那样在夜间大面积发光刺眼，
+ * 在 #1a1a1e 暗底上对比度保持 ≥ 4.8:1。
  */
 export const ACCENT_PRESETS: AccentPreset[] = [
-  { value: 'indigo', label: '靛蓝', light: '#4f46e5', dark: '#a5b4fc' },
-  { value: 'blue', label: '海蓝', light: '#2563eb', dark: '#93c5fd' },
-  { value: 'cyan', label: '青色', light: '#0e7490', dark: '#67e8f9' },
-  { value: 'green', label: '翠绿', light: '#15803d', dark: '#86efac' },
-  { value: 'purple', label: '紫色', light: '#7e22ce', dark: '#d8b4fe' },
-  { value: 'pink', label: '桃粉', light: '#be185d', dark: '#f9a8d4' },
-  { value: 'orange', label: '橙黄', light: '#c2410c', dark: '#fdba74' },
-  { value: 'red', label: '绯红', light: '#b91c1c', dark: '#fca5a5' },
+  { value: 'indigo', label: '靛蓝', light: '#4f46e5', dark: '#7f86d4' },
+  { value: 'blue', label: '海蓝', light: '#2563eb', dark: '#6d97d8' },
+  { value: 'cyan', label: '青色', light: '#0e7490', dark: '#4fa8b0' },
+  { value: 'green', label: '翠绿', light: '#15803d', dark: '#4fac74' },
+  { value: 'purple', label: '紫色', light: '#7e22ce', dark: '#a273cc' },
+  { value: 'pink', label: '桃粉', light: '#be185d', dark: '#cc6fa4' },
+  { value: 'orange', label: '橙黄', light: '#c2410c', dark: '#cc8a56' },
+  { value: 'red', label: '绯红', light: '#b91c1c', dark: '#cc6b6b' },
 ]
 
 /** 默认强调色（靛蓝），与 theme.scss 中的 :root 保持一致 */
@@ -46,6 +53,7 @@ interface ThemeSettings {
   theme: ThemeMode
   transition: ThemeTransition
   accent: string
+  tabBarLayout: TabBarLayout
 }
 
 const THEME_KEY = 'billmeow:settings'
@@ -57,6 +65,8 @@ const defaultSettings: ThemeSettings = {
   theme: 'auto',
   transition: { enabled: true, duration: 260 },
   accent: DEFAULT_ACCENT,
+  /* 默认保持贴边样式，与历史版本视觉一致 */
+  tabBarLayout: 'flush',
 }
 
 /** 过渡结束后移除的类名，与 theme.scss 中保持一致 */
@@ -80,7 +90,16 @@ function loadSettings(): ThemeSettings {
     theme: stored.theme ?? defaultSettings.theme,
     transition: normalizeTransition(stored.transition),
     accent: normalizeAccent(stored.accent),
+    tabBarLayout: normalizeTabBarLayout(stored.tabBarLayout),
   }
+}
+
+/**
+ * 校验页签样式，非法值回退默认贴边。
+ * @param value 待校验的样式标识
+ */
+function normalizeTabBarLayout(value: unknown): TabBarLayout {
+  return value === 'floating' || value === 'flush' ? value : defaultSettings.tabBarLayout
 }
 
 /**
@@ -165,37 +184,35 @@ function createThemeStore() {
   applyTheme(state.theme)
   applyAccent(state.accent)
 
+  /* 任一字段变化都整体写回，避免多个 watch 各自拼装遗漏字段 */
+  const persist = () =>
+    writeStorage(THEME_KEY, {
+      theme: state.theme,
+      transition: state.transition,
+      accent: state.accent,
+      tabBarLayout: state.tabBarLayout,
+    })
+
   watch(
     () => state.theme,
     (mode) => {
       runTransition(state.transition.enabled ? state.transition.duration : 0)
       applyTheme(mode)
-      writeStorage(THEME_KEY, {
-        theme: mode,
-        transition: state.transition,
-        accent: state.accent,
-      })
+      persist()
     },
   )
 
-  watch(
-    () => state.transition,
-    (transition) =>
-      writeStorage(THEME_KEY, { theme: state.theme, transition, accent: state.accent }),
-    { deep: true },
-  )
+  watch(() => state.transition, persist, { deep: true })
 
   watch(
     () => state.accent,
     (accent) => {
       applyAccent(accent)
-      writeStorage(THEME_KEY, {
-        theme: state.theme,
-        transition: state.transition,
-        accent,
-      })
+      persist()
     },
   )
+
+  watch(() => state.tabBarLayout, persist)
 
   const theme = computed({
     get: () => state.theme,
@@ -218,16 +235,25 @@ function createThemeStore() {
     },
   })
 
+  const tabBarLayout = computed({
+    get: () => state.tabBarLayout,
+    set: (value: TabBarLayout) => {
+      state.tabBarLayout = normalizeTabBarLayout(value)
+    },
+  })
+
   function resetTheme() {
     state.theme = defaultSettings.theme
     state.transition = { ...defaultSettings.transition }
     state.accent = defaultSettings.accent
+    state.tabBarLayout = defaultSettings.tabBarLayout
   }
 
   return {
     theme,
     transition,
     accent,
+    tabBarLayout,
     resetTheme,
   }
 }
@@ -238,7 +264,7 @@ function createThemeStore() {
  * 首次调用时读取本地存储、把主题应用到 `<html>` 并注册监听；
  * 之后的调用直接返回同一份引用，保证全局只有一份主题状态。
  *
- * @returns 包含 `theme`、`transition` 两个可读写 ref 与 `resetTheme()` 方法
+ * @returns 包含 `theme`、`transition`、`accent`、`tabBarLayout` 可读写 ref 与 `resetTheme()` 方法
  * @example
  * const { theme } = useTheme()
  * theme.value = 'dark'

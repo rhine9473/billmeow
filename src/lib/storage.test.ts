@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readStorage, removeStorage, writeStorage } from './storage'
 
+/* storage 失败时会调用 notify.error，这里直接 mock 掉模块，断言提示内容。
+   vi.mock 会被提升到文件顶部，工厂函数内不能引用普通顶层变量，因此用 vi.hoisted */
+const { notifyError } = vi.hoisted(() => ({ notifyError: vi.fn() }))
+vi.mock('./toast', () => ({
+  notify: { error: notifyError, success: vi.fn(), info: vi.fn() },
+}))
+
 const KEY = 'test:storage'
 
 /* 模拟 localStorage 不可用（隐私模式 / 配额超限 / 被禁用）；jsdom 下直接 spy 原型方法并抛错 */
@@ -11,14 +18,13 @@ function mockStorageThrow(method: 'getItem' | 'setItem' | 'removeItem') {
 }
 
 describe('storage', () => {
-  /* 失败路径会调用 console.error 与 alert，这里统一 mock，避免测试噪音与阻塞 */
+  /* 失败路径会记录 console.error，这里 mock 掉避免测试噪音 */
   let errorSpy: ReturnType<typeof vi.spyOn>
-  let alertSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     localStorage.clear()
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    notifyError.mockClear()
   })
 
   afterEach(() => {
@@ -102,7 +108,7 @@ describe('storage', () => {
       expect(writeStorage(KEY, 'x')).toBe(true)
     })
 
-    it('写入失败时记录错误日志并 alert 提示用户', () => {
+    it('写入失败时记录错误日志并提示用户', () => {
       mockStorageThrow('setItem')
 
       writeStorage(KEY, 'x')
@@ -111,7 +117,7 @@ describe('storage', () => {
         expect.stringContaining('[storage] 写入'),
         expect.any(Error),
       )
-      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('设置保存失败'))
+      expect(notifyError).toHaveBeenCalledWith(expect.stringContaining('设置保存失败'))
     })
 
     it('写入失败后读取返回 fallback（可选链风格的降级链路）', () => {
@@ -145,7 +151,7 @@ describe('storage', () => {
         expect.stringContaining('[storage] 删除'),
         expect.any(Error),
       )
-      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('数据清除失败'))
+      expect(notifyError).toHaveBeenCalledWith(expect.stringContaining('数据清除失败'))
     })
 
     it('删除成功时返回 true', () => {

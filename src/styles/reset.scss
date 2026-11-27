@@ -119,3 +119,40 @@ table {
 [hidden] {
   display: none !important;
 }
+
+/*
+ * 12. 竖屏 / 小屏隐藏滚动条
+ *
+ * 手机上滚动条既占宽度又难看，而触屏滚动本身不依赖滚动条提示。
+ * 判定用「视窗宽度」而非设备类型（DESIGN.md 第 7 节：只按 viewport 适配），
+ * 断点取 600px，与紧凑区间的上界一致。
+ *
+ * 隐藏方式对每种引擎对症下药：
+ *   - `scrollbar-width: none`  → Firefox
+ *   - `::-webkit-scrollbar`    → Chrome / Edge / Safari（含 iOS）
+ *   - `-ms-overflow-style`     → 旧版 Edge / IE
+ *
+ * 只隐藏视觉，不改变滚动能力：滚动、回弹、`scrollIntoView` 全部照常。
+ */
+@media (max-width: 599px), (orientation: portrait) {
+  html,
+  body,
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  /* 伪元素选择器不能与业务选择器合并写，否则部分引擎会整条规则失效 */
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
+/* 竖屏但宽度可能大于 600px（平板竖屏），单独兜底一次 */
+@media (orientation: portrait) {
+  *::-webkit-scrollbar {
+    display: none;
+  }
+}
