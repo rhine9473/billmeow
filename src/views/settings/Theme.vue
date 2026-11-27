@@ -1,16 +1,56 @@
 <script setup lang="ts">
 import IconCheck from '~icons/material-symbols/check'
+import IconAnimation from '~icons/material-symbols/animation'
 import IconPalette from '~icons/material-symbols/palette'
-import { computed } from 'vue'
+import IconTab from '~icons/material-symbols/pill'
+import { computed, ref } from 'vue'
 
+import Switch from '../../components/Switch.vue'
 import {
   ACCENT_PRESETS,
   TRANSITION_DURATIONS,
   useTheme,
+  type AccentPreset,
   type ThemeMode,
 } from '../../stores/theme'
 
-const { theme, transition, accent } = useTheme()
+const { theme, transition, accent, tabBarLayout } = useTheme()
+
+/* 系统是否处于深色：仅在 theme === 'auto' 时参与判定 */
+const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)')
+const systemDark = ref(prefersDark?.matches ?? false)
+
+prefersDark?.addEventListener('change', (event) => {
+  systemDark.value = event.matches
+})
+
+/*
+ * 色盘当前是否处于深色语境：
+ *  - light：手动锁定白底，用深色（饱和度高）的主题色
+ *  - dark / black：深底，用柔和的暗色主题色
+ *  - auto：跟随系统偏好
+ * 与 theme.scss 中“哪个变量生效”的规则保持一致。
+ */
+const isDarkContext = computed(
+  () => theme.value === 'dark' || theme.value === 'black' || (theme.value === 'auto' && systemDark.value),
+)
+
+/**
+ * 色块应展示的颜色：深底用 dark 值，否则用 light 值。
+ * 与实际生效的 --color-accent 保持同步，避免色盘误导用户。
+ * @param preset 色板项
+ */
+function dotColor(preset: AccentPreset) {
+  return isDarkContext.value ? preset.dark : preset.light
+}
+
+/** 悬浮页签开关：勾选即 floating，取消即贴边 flush */
+const floatingTabBar = computed({
+  get: () => tabBarLayout.value === 'floating',
+  set: (enabled: boolean) => {
+    tabBarLayout.value = enabled ? 'floating' : 'flush'
+  },
+})
 
 interface HalfColors {
   /** 页面底色 */
@@ -182,7 +222,7 @@ function accentFor(useLight: boolean) {
           role="radio"
           class="accent-dot"
           :class="{ 'is-active': accent === preset.value }"
-          :style="{ background: preset.light }"
+          :style="{ background: dotColor(preset) }"
           :aria-checked="accent === preset.value"
           :aria-label="preset.label"
           :title="preset.label"
@@ -194,19 +234,52 @@ function accentFor(useLight: boolean) {
     </div>
 
     <!-- 切换动画设置：可开关、可调时长，方便低性能设备 -->
-    <div class="transition-row">
-      <label class="transition-toggle">
-        <input v-model="transition.enabled" type="checkbox" class="transition-checkbox" />
-        <span>切换动画</span>
-      </label>
+    <div class="animation-row">
+      <h2 class="section-title">
+        <IconAnimation class="title-icon" aria-hidden="true" />
+        动画
+      </h2>
 
-      <label class="transition-duration">
-        <span class="transition-label">时长</span>
-        <select v-model.number="transition.duration" :disabled="!transition.enabled">
-          <option v-for="ms in TRANSITION_DURATIONS" :key="ms" :value="ms">{{ ms }} ms</option>
-        </select>
-      </label>
+      <div class="transition-row">
+        <div class="setting-row">
+          <span class="setting-text">
+            <span class="setting-label">主题过渡动画</span>
+            <span class="setting-hint">切换主题时播放颜色渐变</span>
+          </span>
+          <Switch v-model="transition.enabled" aria-label="主题过渡动画" />
+        </div>
+
+        <div class="setting-row">
+          <span class="setting-text">
+            <span class="setting-label">时长</span>
+            <span class="setting-hint">动画持续的时间</span>
+          </span>
+          <select
+            v-model.number="transition.duration"
+            class="setting-select"
+            aria-label="动画时长"
+            :disabled="!transition.enabled"
+          >
+            <option v-for="ms in TRANSITION_DURATIONS" :key="ms" :value="ms">{{ ms }} ms</option>
+          </select>
+        </div>
+      </div>
     </div>
+
+    <!-- 导航页签样式：贴边 / 悬浮（胶囊） -->
+    <div class="layout-row">
+      <h2 class="section-title">
+        <IconTab class="title-icon" aria-hidden="true" />
+        导航
+      </h2>
+
+      <div class="nav-setting">
+        <span class="nav-text">
+          <span class="nav-label">悬浮页签</span>
+          <span class="nav-hint">开启后底部导航悬浮并使用胶囊样式</span>
+        </span>
+        <Switch v-model="floatingTabBar" aria-label="悬浮页签" />
+      </div>    </div>
   </section>
 </template>
 
@@ -429,38 +502,68 @@ function accentFor(useLight: boolean) {
   color: #fff;
 }
 
-/* 动画设置行 */
-.transition-row {
+/* 动画设置区：结构对齐「主题色」，标题后跟控件行 */
+.animation-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   margin-top: 20px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
   font-size: 13px;
 }
 
-.transition-toggle,
-.transition-duration {
+/* 动画标题：与「主题模式」「主题色」同级 */
+.animation-row .section-title {
+  margin-bottom: 12px;
+}
+
+/* 动画设置行容器：若干条「文字在左、控件在右」的设置行 */
+.transition-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  font-size: 13px;
+}
+
+/*
+ * 统一设置行：左侧文案块 + 右侧控件。
+ * .animation-row 与 .layout-row 共用同一套规则，保证开关永远靠右对齐。
+ */
+.setting-row,
+.nav-setting {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.setting-text,
+.nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setting-label,
+.nav-label {
+  font-size: 14px;
   color: var(--color-text);
 }
 
-.transition-checkbox {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-accent);
-  cursor: pointer;
-}
-
-.transition-label {
+.setting-hint,
+.nav-hint {
+  font-size: 10px;
   color: var(--color-text-muted);
 }
 
-.transition-duration select {
+/* 时长下拉：靠右，与开关右边缘对齐 */
+.setting-select {
+  flex: 0 0 auto;
   padding: 4px 8px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -469,8 +572,24 @@ function accentFor(useLight: boolean) {
   cursor: pointer;
 }
 
-.transition-duration select:disabled {
+.setting-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 导航设置区：与「动画」同构，分隔线 + 标题 + 控件行 */
+.layout-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+}
+
+.layout-row .section-title {
+  margin-bottom: 12px;
 }
 </style>

@@ -5,7 +5,7 @@ import Theme from './Theme.vue'
 <template>
   <div class="settings-page">
     <h1 class="page-title">设置</h1>
-    <!-- 主题模式 -->
+    <!-- 主题模式 / 主题色 / 动画 / 导航页签样式 -->
     <Theme />
   </div>
 </template>

@@ -16,7 +16,7 @@
   color-scheme: light;
   accent-color: var(--color-accent);
   --color-accent-light: #4f46e5;
-  --color-accent-dark: #a5b4fc;
+  --color-accent-dark: #7f86d4;
   --color-bg: #f4f4f6;
   --color-surface: #ffffff;
   --color-border: #e3e3e8;
@@ -35,7 +35,7 @@
   --color-border: #333339;
   --color-text: #ededf1;
   --color-text-muted: #9c9ca6;
-  /* 深色底用较亮的强调色 */
+  /* 深色底用中等明度的强调色：足够看清，又不会在夜间刺眼 */
   --color-accent: var(--color-accent-dark);
   --color-success: #6fd99b;
   --color-danger: #f28b82;
@@ -68,7 +68,7 @@
   --color-border: #2a2a30;
   --color-text: #f5f5f7;
   --color-text-muted: #a3a3ad;
-  /* 纯黑底同样用较亮的强调色 */
+  /* 纯黑底同样用中等明度的强调色 */
   --color-accent: var(--color-accent-dark);
   --color-success: #6fd99b;
   --color-danger: #ff8a80;

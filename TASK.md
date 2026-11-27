@@ -56,17 +56,17 @@ flowchart LR
 
 ### A. 数据与基础设施（P0）
 
-- [ ] **A1 数据模型定义** · 依赖：无 · @chairowell
+- [x] **A1 数据模型定义** · 依赖：无 · @chairowell
   - 产出：`src/types/bill.ts`
   - 内容：`Account`（资产 / 负债、币种、卡号后四位、初始余额、归档）、`Category`（一级 + 二级、内置 / 自定义、支出 / 收入域）、`Transaction`（支出 / 收入、金额、分类、账户、日期、备注）、`Transfer`（转出 / 转入账户）
   - 验收：四种类型可被 store 引用；金额统一以**整数分**存储，避免浮点误差；`pnpm build` 通过
 
-- [ ] **A2 持久化层** · 依赖：A1 · @chairowell
+- [x] **A2 持久化层** · 依赖：A1 · @chairowell
   - 产出：`src/lib/db.ts`（搭配已有 `lib/storage.ts`）
   - 方案：使用 **IndexedDB** 异步存储账单、账户、分类等结构化业务数据（支持大容量、索引与事务，避免同步读写阻塞 UI）；`localStorage` 仅保留用于设置项等轻量 JSON 数据（后续若做原生 App 可扩展 SQLite）
   - 验收：写入后刷新页面，数据不丢失；处理好数据库版本升级与异步异常降级（`storage.ts` 已有 `localStorage` 降级保护）
 
-- [ ] **A3 路由与页签骨架** · 依赖：无 · @chairowell
+- [x] **A3 路由与页签骨架** · 依赖：无 · @chairowell
   - 产出：在 PR #7 已有 `src/router/index.ts`（含 `/settings`）基础上补齐其余 4 个路由、改 `/` 重定向，并在 `src/App.vue` 加底部页签
   - 路由：`/records`（账单）、`/record`（记一笔）、`/accounts`、`/stats`、`/settings`
   - 验收：五个页面可互相跳转，且全部按 `views/{name}/index.vue` 懒加载
